@@ -16,3 +16,12 @@ void audio_chirp(void);
 
 // Queue an angry hiss: a sharp burst of high-tilted noise.
 void audio_hiss(void);
+
+// One soft footstep tap (alternates subtly between two timbres).
+void audio_step(void);
+
+// A little spring "boing" for jumps.
+void audio_boing(void);
+
+// A quiet slurp for paw-licking.
+void audio_slurp(void);

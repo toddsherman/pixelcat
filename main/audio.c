@@ -24,6 +24,9 @@ static i2s_chan_handle_t s_tx;
 static volatile float s_target;
 static volatile bool s_chirp_pending;
 static volatile bool s_hiss_pending;
+static volatile bool s_step_pending;
+static volatile bool s_boing_pending;
+static volatile bool s_slurp_pending;
 
 static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
 {
@@ -131,6 +134,13 @@ typedef struct {
     float chirp_t;    // seconds into the chirp, or -1 when idle
     float hiss_t;     // seconds into the hiss, or -1 when idle
     float hiss_lpf;   // filter state for tilting the hiss noise
+    float step_env;   // footstep tap envelope
+    float step_lpf;
+    bool step_alt;    // alternate paw timbre
+    float boing_t;    // seconds into the boing, or -1
+    float boing_ph;
+    float slurp_t;    // seconds into the slurp, or -1
+    float slurp_lpf;
 } purr_state_t;
 
 static void fill_frame(purr_state_t *st, int16_t *out)
@@ -156,6 +166,20 @@ static void fill_frame(purr_state_t *st, int16_t *out)
     if (s_hiss_pending) {
         s_hiss_pending = false;
         st->hiss_t = 0.0f;
+    }
+    if (s_step_pending) {
+        s_step_pending = false;
+        st->step_env = 1.0f;
+        st->step_alt = !st->step_alt;
+    }
+    if (s_boing_pending) {
+        s_boing_pending = false;
+        st->boing_t = 0.0f;
+        st->boing_ph = 0.0f;
+    }
+    if (s_slurp_pending) {
+        s_slurp_pending = false;
+        st->slurp_t = 0.0f;
     }
 
     for (int i = 0; i < AUDIO_FRAME_SAMPLES; i++) {
@@ -217,6 +241,50 @@ static void fill_frame(purr_state_t *st, int16_t *out)
             }
         }
 
+        // Footstep: a 45 ms tap of soft low-passed noise; alternate paws get
+        // slightly different brightness so a walk pitter-patters.
+        if (st->step_env > 0.002f) {
+            const float cutoff = st->step_alt ? 950.0f : 680.0f;
+            const float kf = 1.0f - expf(-TWO_PI * cutoff * dt);
+            st->step_lpf += kf * (frand() - st->step_lpf);
+            s += st->step_env * st->step_env * st->step_lpf * 0.55f;
+            st->step_env -= dt / 0.045f;
+        }
+
+        // Boing: a sine whose pitch springs — a fast drop with a decaying
+        // wobble — under a soft 0.35 s envelope.
+        if (st->boing_t >= 0.0f) {
+            const float t = st->boing_t;
+            const float dur = 0.35f;
+            if (t < dur) {
+                const float f = 190.0f + 110.0f * expf(-t * 5.0f) * cosf(TWO_PI * 10.0f * t);
+                st->boing_ph += TWO_PI * f * dt;
+                const float attack = (t < 0.008f) ? (t / 0.008f) : 1.0f;
+                s += 0.24f * attack * expf(-t * 7.0f) * sinf(st->boing_ph);
+                st->boing_t += dt;
+            } else {
+                st->boing_t = -1.0f;
+            }
+        }
+
+        // Slurp: noise through a low-pass whose cutoff sweeps up quickly,
+        // under a 160 ms bell envelope. Reads as a small wet lick.
+        if (st->slurp_t >= 0.0f) {
+            const float t = st->slurp_t;
+            const float dur = 0.16f;
+            if (t < dur) {
+                const float u = t / dur;
+                const float cutoff = 280.0f + 1300.0f * u * u;
+                const float kf = 1.0f - expf(-TWO_PI * cutoff * dt);
+                st->slurp_lpf += kf * (frand() - st->slurp_lpf);
+                const float bell = sinf(3.14159265f * u);
+                s += 0.17f * bell * st->slurp_lpf * 2.2f;
+                st->slurp_t += dt;
+            } else {
+                st->slurp_t = -1.0f;
+            }
+        }
+
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         out[i] = (int16_t)(s * 30000.0f);
@@ -227,7 +295,7 @@ static void purr_task(void *arg)
 {
     (void)arg;
     static int16_t frame[AUDIO_FRAME_SAMPLES];
-    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f};
+    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f};
 
     for (;;) {
         fill_frame(&st, frame);
@@ -265,4 +333,19 @@ void audio_chirp(void)
 void audio_hiss(void)
 {
     s_hiss_pending = true;
+}
+
+void audio_step(void)
+{
+    s_step_pending = true;
+}
+
+void audio_boing(void)
+{
+    s_boing_pending = true;
+}
+
+void audio_slurp(void)
+{
+    s_slurp_pending = true;
 }

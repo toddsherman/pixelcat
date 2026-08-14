@@ -199,6 +199,10 @@ static struct {
     float stroke_speed;
     bool chirp;
     bool hiss;
+    bool step;
+    bool boing;
+    bool slurp;
+    int prev_frame;
 
     bool was_down;
     float last_x, last_y, moved, press_t;
@@ -363,12 +367,12 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
                 s.chirp = true;
             }
             enter(M_PET);
-            s.chirp = true;
         } else if (tap_on_cat) {
             if (s.mode == M_SLEEP) {
                 s.chirp = true;
             }
             enter(M_BIG_JUMP);
+            s.boing = true;
         } else if (tap_on_side && s.mode != M_PET) {
             if (s.tap_side == side_of) {
                 // Second tap on the same side: leap that way.
@@ -379,6 +383,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
                     s.chirp = true;
                 }
                 enter(M_LEAP);
+                s.boing = true;
             } else {
                 s.tap_side = side_of;
                 s.tap_age = 0.0f;
@@ -438,6 +443,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
                 if (s.tap_side == s.move_dir && s.tap_age < DOUBLE_TAP_S) {
                     s.tap_side = 0;
                     enter(M_LEAP);
+                    s.boing = true;
                 } else {
                     to_passive();
                 }
@@ -480,6 +486,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
     float target = 0.0f;
     if (s.mode == M_PET && touch->down) {
         target = 0.35f + 0.65f * fminf(s.stroke_speed / PET_SPEED_FULL, 1.0f);
+    } else if (s.mode == M_SLEEP) {
+        target = 0.16f;  // the low sleeping purr
     }
     const float rate = (target > s.purr) ? PET_RAMP_UP : PET_RAMP_DOWN;
     const float step = rate * dt;
@@ -517,7 +525,40 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
         }
     }
 
+    // Frame-edge sound events, emitted exactly once per frame change.
+    const int frame = anim_frame();
+    if (frame != s.prev_frame) {
+        if (s.mode == M_TROT && (frame == 1 || frame == 5)) {
+            s.step = true;
+        }
+        if (s.mode == M_CLEAN_PAW && frame == 1) {
+            s.slurp = true;
+        }
+        s.prev_frame = frame;
+    }
+
     s.was_down = touch->down;
+}
+
+bool cat_take_step(void)
+{
+    const bool v = s.step;
+    s.step = false;
+    return v;
+}
+
+bool cat_take_boing(void)
+{
+    const bool v = s.boing;
+    s.boing = false;
+    return v;
+}
+
+bool cat_take_slurp(void)
+{
+    const bool v = s.slurp;
+    s.slurp = false;
+    return v;
 }
 
 float cat_purr_level(void)

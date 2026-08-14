@@ -67,6 +67,15 @@ static void cat_task(void *arg)
         if (cat_take_hiss()) {
             audio_hiss();
         }
+        if (cat_take_step()) {
+            audio_step();
+        }
+        if (cat_take_boing()) {
+            audio_boing();
+        }
+        if (cat_take_slurp()) {
+            audio_slurp();
+        }
 
         cat_render();
 

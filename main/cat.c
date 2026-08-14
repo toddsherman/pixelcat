@@ -565,6 +565,10 @@ bool cat_take_hiss(void)
     return false;  // the big cat does not hiss
 }
 
+bool cat_take_step(void) { return false; }
+bool cat_take_boing(void) { return false; }
+bool cat_take_slurp(void) { return false; }
+
 bool cat_take_chirp(void)
 {
     const bool c = s.chirp;
