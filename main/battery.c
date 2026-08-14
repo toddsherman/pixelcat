@@ -10,6 +10,7 @@
 static const char *TAG = "battery";
 
 static i2c_master_dev_handle_t s_dev;
+static int s_st1 = -1, s_st2 = -1;
 
 static esp_err_t read_reg(uint8_t reg, uint8_t *val)
 {
@@ -46,7 +47,16 @@ bool battery_read(int *percent, bool *charging)
         return false;
     }
     *percent = (pct <= 100) ? pct : 100;
-    // Charging, or simply powered over USB: either way the bar shows "plugged".
-    *charging = (((st2 >> 5) & 0x3) == 0x1) || ((st1 >> 5) & 0x1);
+    s_st1 = st1;
+    s_st2 = st2;
+    // Charging (STATUS2 bits 7:5 == 001), or USB power present (STATUS1 bit
+    // 5, VBUS good): either way the bar shows "plugged".
+    *charging = ((st2 >> 5) == 0x01) || ((st1 >> 5) & 0x1);
     return true;
+}
+
+void battery_raw(int *status1, int *status2)
+{
+    *status1 = s_st1;
+    *status2 = s_st2;
 }

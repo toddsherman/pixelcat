@@ -106,9 +106,11 @@ static void cat_task(void *arg)
             last_log_us = now;
             float g[3];
             imu_gravity(g);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f",
+            int st1, st2;
+            battery_raw(&st1, &st2);
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
-                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x());
+                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2);
         }
 
         vTaskDelayUntil(&last_wake, period);

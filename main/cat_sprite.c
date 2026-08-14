@@ -722,7 +722,7 @@ static void compose(void)
             px(bx + x, by + 2, C_OUT);
         }
         px(bx, by + 1, C_OUT);
-        px(bx + 8, by + 1, C_OUT);  // tip (kept clear of the rounded corner)
+        // Plain rectangle: no tip nub.
         const int fill = (s.batt_pct * 6 + 50) / 100;
         uint8_t col = C_BATT_G;
         if (s.batt_chg) {
