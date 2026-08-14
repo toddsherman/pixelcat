@@ -8,6 +8,7 @@ idf_component_register(
         "imu.c"
         "cat.c"
         "cat_sprite.c"
+        "cat_bg.c"
     INCLUDE_DIRS "."
 )
 

@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "cat_anims.h"
+#include "cat_bg.h"
 #include "display.h"
 
 // ---------------------------------------------------------------------------
@@ -58,8 +59,8 @@ static uint16_t s_pal565[C_COUNT];
 
 static uint8_t s_canvas[CANVAS_W * CANVAS_H];
 
-#define FLOOR_Y 46
-#define CHECKER 6
+#define FLOOR_Y 51   // feet on the path
+#define BG_FPS 3.0f
 #define SPRITE_W ANIM_W
 #define POS_MIN 1.0f
 #define POS_MAX (CANVAS_W - SPRITE_W - 1.0f)
@@ -188,6 +189,7 @@ typedef struct {
 static struct {
     mode_t mode;
     float t;
+    float bg_t;
     float decide_in;
     float since_touch;
     float pos_x;
@@ -310,6 +312,7 @@ void cat_init(void)
 void cat_update(float dt, const cat_touch_t *touch, float shake)
 {
     s.t += dt;
+    s.bg_t += dt;
     s.tap_age += dt;
     if (s.tap_age > DOUBLE_TAP_S) {
         s.tap_side = 0;
@@ -616,13 +619,8 @@ void cat_debug_force(int mode)
 
 static void compose(void)
 {
-    for (int y = 0; y < CANVAS_H; y++) {
-        const int cy = y / CHECKER;
-        uint8_t *row = &s_canvas[y * CANVAS_W];
-        for (int x = 0; x < CANVAS_W; x++) {
-            row[x] = (((x / CHECKER) + cy) & 1) ? C_BG2 : C_BG;
-        }
-    }
+    // Index 0 = transparent: the painted scene shows through.
+    memset(s_canvas, 0, sizeof(s_canvas));
 
     const anim_desc_t *a = &k_anim[s.mode];
     const cat_frame_t *f = &a->frames[anim_frame()];
@@ -654,19 +652,27 @@ void cat_render(void)
 {
     compose();
 
+    const uint16_t *bg = cat_bg[((int)(s.bg_t * BG_FPS)) % BG_FRAMES];
+
     for (int band = 0; band < BAND_COUNT; band++) {
         uint16_t *buf = display_acquire_band();
         const int y0 = band * BAND_ROWS;
 
         for (int row = 0; row < BAND_ROWS; row++) {
-            const uint8_t *crow = &s_canvas[((y0 + row) / PIX_SCALE) * CANVAS_W];
             uint16_t *out = buf + row * LCD_H_RES;
+            memcpy(out, &bg[(y0 + row) * BG_W], LCD_H_RES * sizeof(uint16_t));
+
+            // Sprite overlay: only non-transparent cells cover the scene.
+            const uint8_t *crow = &s_canvas[((y0 + row) / PIX_SCALE) * CANVAS_W];
             for (int cx = 0; cx < CANVAS_W; cx++) {
-                const uint16_t c = s_pal565[crow[cx]];
-                for (int r = 0; r < PIX_SCALE; r++) {
-                    out[r] = c;
+                const uint8_t ci = crow[cx];
+                if (ci) {
+                    const uint16_t c = s_pal565[ci];
+                    uint16_t *o = out + cx * PIX_SCALE;
+                    for (int r = 0; r < PIX_SCALE; r++) {
+                        o[r] = c;
+                    }
                 }
-                out += PIX_SCALE;
             }
         }
 

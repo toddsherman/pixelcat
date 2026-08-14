@@ -12,7 +12,7 @@ cp "$main/cat_sprite.c" "$here/cat_sprite_host.c"
 trap 'rm -f "$here/cat_host.c" "$here/cat_sprite_host.c"' EXIT
 
 cc -O1 -std=c11 -Wall -I "$here" -I "$main" \
-    "$here/preview.c" "$here/cat_host.c" "$here/cat_sprite_host.c" -lm -o "$out/preview"
+    "$here/preview.c" "$here/cat_host.c" "$here/cat_sprite_host.c" "$main/cat_bg.c" -lm -o "$out/preview"
 
 # 0-3: behaviour states. 10+: forced modes (sprite cat: portrait, profile,
 # clean_paw, clean_ear, trot, leap, sleep, pawing, big_jump, angry, pet).
