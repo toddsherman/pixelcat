@@ -15,3 +15,6 @@ float imu_shake(void);
 // Gravity component along the screen's horizontal axis, m/s^2. Positive means
 // the device's right side is tilted down. Valid after imu_shake() has run.
 float imu_tilt_x(void);
+
+// Raw low-passed gravity estimate (IMU axes), for calibration logging.
+void imu_gravity(float out[3]);

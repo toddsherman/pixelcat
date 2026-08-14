@@ -4,6 +4,8 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // qmi8658.h defines its own M_PI; drop the math.h one first.
 #undef M_PI
@@ -34,10 +36,26 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus)
     if (ret != ESP_OK) {
         return ret;
     }
+
+    // Full bring-up, matching the known-good fluidbox sequence: soft reset,
+    // then CTRL1 (address auto-increment) — without which burst reads return
+    // pegged garbage — then range/rate/units.
+    ret = qmi8658_write_register(&s_dev, 0x60, 0xB0);  // soft reset
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+    ret = qmi8658_write_register(&s_dev, QMI8658_CTRL1, 0x60);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
     if ((ret = qmi8658_set_accel_range(&s_dev, QMI8658_ACCEL_RANGE_8G)) != ESP_OK) return ret;
     if ((ret = qmi8658_set_accel_odr(&s_dev, QMI8658_ACCEL_ODR_250HZ)) != ESP_OK) return ret;
+    if ((ret = qmi8658_set_gyro_range(&s_dev, QMI8658_GYRO_RANGE_512DPS)) != ESP_OK) return ret;
+    if ((ret = qmi8658_set_gyro_odr(&s_dev, QMI8658_GYRO_ODR_250HZ)) != ESP_OK) return ret;
     qmi8658_set_accel_unit_mps2(&s_dev, true);
-    if ((ret = qmi8658_enable_sensors(&s_dev, QMI8658_ENABLE_ACCEL)) != ESP_OK) return ret;
+    if ((ret = qmi8658_enable_sensors(&s_dev, QMI8658_ENABLE_ACCEL | QMI8658_ENABLE_GYRO)) != ESP_OK) return ret;
 
     s_last_us = esp_timer_get_time();
     s_ready = true;
@@ -47,11 +65,18 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus)
 
 float imu_tilt_x(void)
 {
-    // On the V2 board the IMU is mounted rotated relative to the V1 the
-    // fluidbox mapping was measured on: reclining the device registers on the
-    // y axis, left/right roll on the x axis. (Confirmed empirically: a stand's
-    // backward recline showed up on y and falsely read as sideways tilt.)
-    return s_ready ? -s_lp[0] : 0.0f;
+    // Board axis mapping (same as fluidbox measured, valid on V2 as well):
+    // screen-x gravity is the negated IMU y axis. The earlier confusion here
+    // came from the sensor returning pegged garbage before its CTRL1 setup
+    // was in place, not from the mapping.
+    return s_ready ? -s_lp[1] : 0.0f;
+}
+
+void imu_gravity(float out[3])
+{
+    out[0] = s_lp[0];
+    out[1] = s_lp[1];
+    out[2] = s_lp[2];
 }
 
 float imu_shake(void)

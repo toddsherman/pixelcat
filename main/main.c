@@ -100,8 +100,11 @@ static void cat_task(void *arg)
 
         if (now - last_log_us > 3000000) {
             last_log_us = now;
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d",
-                     (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors());
+            float g[3];
+            imu_gravity(g);
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f",
+                     (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
+                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x());
         }
 
         vTaskDelayUntil(&last_wake, period);
