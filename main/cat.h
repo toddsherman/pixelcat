@@ -30,6 +30,9 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt);
 // Feed the fuel gauge reading for the corner battery bar (-1 = unknown).
 void cat_set_battery(int percent, bool charging);
 
+// Select the background time-of-day variant (a BG_* index from cat_bg.h).
+void cat_set_daypart(int variant);
+
 // Compose the canvas and push every band to the display.
 void cat_render(void);
 

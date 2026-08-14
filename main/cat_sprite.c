@@ -238,6 +238,7 @@ static struct {
     int batt_pct;        // -1 until the first reading arrives
     bool batt_chg;
     bool batt_screen;    // full-screen battery view (tap the corner bar)
+    int daypart;         // BG_* variant index chosen by the clock
     uint32_t rng;
 } s;
 
@@ -670,6 +671,13 @@ void cat_set_battery(int percent, bool charging)
     s.batt_chg = charging;
 }
 
+void cat_set_daypart(int variant)
+{
+    if (variant >= 0 && variant < BG_VARIANTS) {
+        s.daypart = variant;
+    }
+}
+
 float cat_purr_level(void)
 {
     return s.purr;
@@ -851,7 +859,7 @@ void cat_render(void)
         compose();
     }
 
-    const uint16_t *bg = cat_bg[((int)(s.bg_t * BG_FPS)) % BG_FRAMES];
+    const uint16_t *bg = cat_bg[s.daypart][((int)(s.bg_t * BG_FPS)) % BG_FRAMES];
 
     for (int band = 0; band < BAND_COUNT; band++) {
         uint16_t *buf = display_acquire_band();

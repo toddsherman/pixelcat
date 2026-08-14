@@ -16,7 +16,10 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cat_bg.h"
 #include "imu.h"
+#include "rtc.h"
+#include "sun_table.h"
 #include "touch.h"
 
 #define I2C_PORT I2C_NUM_0
@@ -36,6 +39,61 @@ static esp_err_t i2c_init(void)
         .flags.enable_internal_pullup = true,
     };
     return i2c_new_master_bus(&cfg, &s_i2c_bus);
+}
+
+// ---------------------------------------------------------------------------
+// The lake follows the real sun at ZIP 94403: the table holds sunrise/sunset
+// in PST, and the US DST rule (second Sunday of March to first Sunday of
+// November) adds the hour when active.
+// ---------------------------------------------------------------------------
+
+static int day_of_year(int year, int mon, int day)
+{
+    static const int cum[12] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+    int doy = cum[mon - 1] + day;
+    const bool leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    if (leap && mon > 2) {
+        doy++;
+    }
+    return doy;
+}
+
+static int weekday(int y, int m, int d)  // 0 = Sunday (Sakamoto)
+{
+    static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+    if (m < 3) {
+        y -= 1;
+    }
+    return (y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7;
+}
+
+static bool dst_active(int year, int mon, int day)
+{
+    if (mon < 3 || mon > 11) return false;
+    if (mon > 3 && mon < 11) return true;
+    if (mon == 3) {
+        const int second_sunday = 8 + (7 - weekday(year, 3, 8)) % 7;
+        return day >= second_sunday;
+    }
+    const int first_sunday = 1 + (7 - weekday(year, 11, 1)) % 7;
+    return day < first_sunday;
+}
+
+static int daypart_for(int year, int mon, int day, int minutes)
+{
+    if (minutes < 0) {
+        return BG_DAY;
+    }
+    const int doy = day_of_year(year, mon, day);
+    const int dst = dst_active(year, mon, day) ? 60 : 0;
+    const int rise = k_sunrise[doy - 1] + dst;
+    const int set = k_sunset[doy - 1] + dst;
+
+    if (minutes >= rise - 40 && minutes < rise + 20) return BG_DAWN;
+    if (minutes >= rise + 20 && minutes < set - 30) return BG_DAY;
+    if (minutes >= set - 30 && minutes < set + 15) return BG_DUSK;
+    if (minutes >= set + 15 && minutes < set + 50) return BG_TWILIGHT;
+    return BG_NIGHT;
 }
 
 static void cat_task(void *arg)
@@ -96,6 +154,10 @@ static void cat_task(void *arg)
             if (battery_read(&pct, &chg)) {
                 cat_set_battery(pct, chg);
             }
+            int yy, mm, dd;
+            if (pcf_date(&yy, &mm, &dd)) {
+                cat_set_daypart(daypart_for(yy, mm, dd, pcf_minutes_of_day()));
+            }
         }
 
         if (button_take_short_press()) {
@@ -149,6 +211,9 @@ void app_main(void)
     }
     if (battery_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no fuel gauge: battery bar disabled");
+    }
+    if (pcf_init(s_i2c_bus) != ESP_OK) {
+        ESP_LOGW(TAG, "no RTC: the scene stays in daylight");
     }
     if (audio_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no audio: the cat purrs in spirit only");
