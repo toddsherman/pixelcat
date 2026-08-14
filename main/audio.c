@@ -264,10 +264,13 @@ static void fill_frame(purr_state_t *st, int16_t *out)
             const float t = st->boing_t;
             const float dur = 0.35f;
             if (t < dur) {
-                const float f = 190.0f + 110.0f * expf(-t * 5.0f) * cosf(TWO_PI * 10.0f * t);
+                // Pitched for a tiny speaker: centred ~420 Hz with the
+                // spring wobble, plus a second harmonic for body.
+                const float f = 420.0f + 260.0f * expf(-t * 5.0f) * cosf(TWO_PI * 10.0f * t);
                 st->boing_ph += TWO_PI * f * dt;
                 const float attack = (t < 0.008f) ? (t / 0.008f) : 1.0f;
-                s += 0.24f * attack * expf(-t * 7.0f) * sinf(st->boing_ph);
+                const float env = 0.32f * attack * expf(-t * 7.0f);
+                s += env * (sinf(st->boing_ph) + 0.35f * sinf(2.0f * st->boing_ph));
                 st->boing_t += dt;
             } else {
                 st->boing_t = -1.0f;
