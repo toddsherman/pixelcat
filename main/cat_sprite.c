@@ -38,6 +38,7 @@ enum {
     C_BATT_R,
     C_BATT_B,
     C_BLACK,
+    C_EYE,     // the cat's eyes: dark by day, glowing green at night
     C_COUNT,
 };
 
@@ -57,11 +58,14 @@ static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_BATT_R] = {224, 80, 70},
     [C_BATT_B] = {90, 170, 235},
     [C_BLACK] = {0, 0, 0},
+    [C_EYE] = {44, 38, 48},
 };
 
 #define SWAP16(v) ((uint16_t)((((v) >> 8) & 0xFF) | (((v) & 0xFF) << 8)))
 
-static uint16_t s_pal565[C_COUNT];
+// One palette per background variant: the cat and effects ride the same
+// colour grade as the scene. UI colours are exempt.
+static uint16_t s_pal565[BG_VARIANTS][C_COUNT];
 
 // ---------------------------------------------------------------------------
 // Canvas
@@ -90,7 +94,7 @@ static uint8_t char_color(char ch)
         case 'w': return C_BODY;
         case 's': return C_SHADE;
         case 'p': return C_PINK;
-        case 'k': return C_DARK;
+        case 'k': return C_EYE;
         case '^': return C_DARK;
         case 'r': return C_HEART;
         case 'z': return C_SLEEP;
@@ -317,6 +321,43 @@ static void start_wander(void)
     enter(M_TROT);
 }
 
+// The same grade curves gen_bg.py bakes into the scene, applied to the
+// sprite palette so cat and world always match.
+static void grade_rgb(int variant, int r, int g, int b, int *ro, int *go, int *bo)
+{
+    const float gy = (r * 30 + g * 59 + b * 11) / 100.0f;
+    float rf = r, gf = g, bf = b;
+    switch (variant) {
+        case BG_DAWN:
+            rf = r * .82f + 34; gf = g * .68f + 16; bf = b * .78f + 26;
+            break;
+        case BG_DUSK:
+            rf = r * .92f + 28; gf = g * .62f + 8; bf = b * .45f + 6;
+            break;
+        case BG_TWILIGHT:
+            rf = (r + (gy - r) * .3f) * .48f + 22;
+            gf = (g + (gy - g) * .3f) * .38f + 10;
+            bf = (b + (gy - b) * .3f) * .62f + 34;
+            break;
+        case BG_NIGHT:
+            rf = (r + (gy - r) * .45f) * .24f + 6;
+            gf = (g + (gy - g) * .45f) * .28f + 9;
+            bf = (b + (gy - b) * .45f) * .52f + 28;
+            break;
+        default:
+            break;
+    }
+    *ro = (rf < 0) ? 0 : (rf > 255) ? 255 : (int)rf;
+    *go = (gf < 0) ? 0 : (gf > 255) ? 255 : (int)gf;
+    *bo = (bf < 0) ? 0 : (bf > 255) ? 255 : (int)bf;
+}
+
+static bool palette_ungraded(int idx)
+{
+    return idx == C_BATT_G || idx == C_BATT_Y || idx == C_BATT_R ||
+           idx == C_BATT_B || idx == C_BLACK || idx == C_WHITE;
+}
+
 void cat_init(void)
 {
     memset(&s, 0, sizeof(s));
@@ -327,11 +368,19 @@ void cat_init(void)
     s.batt_pct = -1;
     s.rng = 0x9E3779B9;
 
-    for (int i = 0; i < C_COUNT; i++) {
-        const uint16_t v = (uint16_t)(((s_pal_rgb[i][0] & 0xF8) << 8) |
-                                      ((s_pal_rgb[i][1] & 0xFC) << 3) |
-                                      (s_pal_rgb[i][2] >> 3));
-        s_pal565[i] = SWAP16(v);
+    for (int v = 0; v < BG_VARIANTS; v++) {
+        for (int i = 0; i < C_COUNT; i++) {
+            int r = s_pal_rgb[i][0], g = s_pal_rgb[i][1], b = s_pal_rgb[i][2];
+            if (i == C_EYE && v == BG_NIGHT) {
+                // Bright green cat eyes in the dark.
+                r = 90; g = 255; b = 110;
+            } else if (!palette_ungraded(i)) {
+                grade_rgb(v, r, g, b, &r, &g, &b);
+            }
+            const uint16_t val = (uint16_t)(((r & 0xF8) << 8) |
+                                            ((g & 0xFC) << 3) | (b >> 3));
+            s_pal565[v][i] = SWAP16(val);
+        }
     }
 }
 
@@ -814,12 +863,12 @@ static void compose_battery(void)
     // Gauge: 32x8 outline centred, 30x6 fill inside.
     const int bx = (CANVAS_W - 32) / 2, by = 22;
     for (int x = 0; x < 32; x++) {
-        px(bx + x, by, C_BODY);
-        px(bx + x, by + 7, C_BODY);
+        px(bx + x, by, C_WHITE);
+        px(bx + x, by + 7, C_WHITE);
     }
     for (int y = 1; y < 7; y++) {
-        px(bx, by + y, C_BODY);
-        px(bx + 31, by + y, C_BODY);
+        px(bx, by + y, C_WHITE);
+        px(bx + 31, by + y, C_WHITE);
     }
     const int fill = (pct * 30 + 50) / 100;
     for (int y = 1; y < 7; y++) {
@@ -839,7 +888,7 @@ static void compose_battery(void)
     const int tw = n * 4 - 1;
     int tx = (CANVAS_W - tw) / 2;
     for (int i = 0; i < n; i++) {
-        draw_glyph(tx, by + 11, glyphs[i], C_BODY);
+        draw_glyph(tx, by + 11, glyphs[i], C_WHITE);
         tx += 4;
     }
 }
@@ -871,10 +920,11 @@ void cat_render(void)
 
             // Sprite overlay: only non-transparent cells cover the scene.
             const uint8_t *crow = &s_canvas[((y0 + row) / PIX_SCALE) * CANVAS_W];
+            const uint16_t *pal = s_pal565[s.batt_screen ? BG_DAY : s.daypart];
             for (int cx = 0; cx < CANVAS_W; cx++) {
                 const uint8_t ci = crow[cx];
                 if (ci) {
-                    const uint16_t c = s_pal565[ci];
+                    const uint16_t c = pal[ci];
                     uint16_t *o = out + cx * PIX_SCALE;
                     for (int r = 0; r < PIX_SCALE; r++) {
                         o[r] = c;

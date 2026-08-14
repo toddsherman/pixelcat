@@ -42,8 +42,11 @@ int main(int argc, char **argv)
     cat_touch_t t = {0};
     const float dt = 1.0f / CAT_FPS;
 
-    if (want >= 10) {
-        // Force an internal pose directly (sprite cat modes), no behaviour.
+    if (want >= 30) {
+        // Night variants: force daypart NIGHT plus a pose.
+        cat_set_daypart(4);
+        cat_debug_force(want - 30);
+    } else if (want >= 10) {
         cat_debug_force(want - 10);
     } else if (want == 1) {
         // Stroke across the cat (it starts centred, near the floor line).

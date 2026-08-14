@@ -19,6 +19,7 @@
 #include "cat_bg.h"
 #include "imu.h"
 #include "rtc.h"
+#include "wifi_time.h"
 #include "sun_table.h"
 #include "touch.h"
 
@@ -105,6 +106,7 @@ static void cat_task(void *arg)
     int64_t last_us = esp_timer_get_time();
     int64_t last_log_us = last_us;
     int64_t last_batt_us = 0;
+    int daypart_for_log = 0;
 
     for (;;) {
         const int64_t now = esp_timer_get_time();
@@ -156,7 +158,8 @@ static void cat_task(void *arg)
             }
             int yy, mm, dd;
             if (pcf_date(&yy, &mm, &dd)) {
-                cat_set_daypart(daypart_for(yy, mm, dd, pcf_minutes_of_day()));
+                daypart_for_log = daypart_for(yy, mm, dd, pcf_minutes_of_day());
+                cat_set_daypart(daypart_for_log);
             }
         }
 
@@ -170,9 +173,10 @@ static void cat_task(void *arg)
             imu_gravity(g);
             int st1, st2;
             battery_raw(&st1, &st2);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x",
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
-                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2);
+                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2,
+                     pcf_minutes_of_day(), daypart_for_log);
         }
 
         vTaskDelayUntil(&last_wake, period);
@@ -215,6 +219,7 @@ void app_main(void)
     if (pcf_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no RTC: the scene stays in daylight");
     }
+    wifi_time_start();
     if (audio_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no audio: the cat purrs in spirit only");
     }

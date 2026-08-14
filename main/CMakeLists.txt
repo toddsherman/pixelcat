@@ -11,6 +11,7 @@ idf_component_register(
         "cat_bg.c"
         "battery.c"
         "rtc.c"
+        "wifi_time.c"
     INCLUDE_DIRS "."
 )
 

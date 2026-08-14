@@ -114,6 +114,16 @@ esp_err_t pcf_init(i2c_master_bus_handle_t bus)
     return ESP_OK;
 }
 
+esp_err_t pcf_set_civil(int year, int mon, int day, int hour, int min, int sec)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const rtc_tm_t t = {.year = year, .mon = mon, .day = day,
+                        .hour = hour, .min = min, .sec = sec};
+    return write_time(&t);
+}
+
 bool pcf_date(int *year, int *mon, int *day)
 {
     if (!s_ready) {
