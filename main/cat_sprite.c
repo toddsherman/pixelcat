@@ -185,13 +185,13 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
 #define DOUBLE_TAP_S 0.9f
 #define TROT_SPEED 7.0f
 // Tilt thresholds, as a fraction of full gravity (sin of the tilt angle).
-// 10-30%% walks him; past 30%% he bounds in chained leaps. Each band has a
+// 10-45%% walks him; past 45%% he bounds in chained leaps. Each band has a
 // little hysteresis so he does not stutter at the boundary.
 #define TILT_G 9.81f
 #define TILT_WALK_ON (0.10f * TILT_G)
 #define TILT_WALK_OFF (0.08f * TILT_G)
-#define TILT_LEAP_ON (0.30f * TILT_G)
-#define TILT_LEAP_OFF (0.26f * TILT_G)
+#define TILT_LEAP_ON (0.45f * TILT_G)
+#define TILT_LEAP_OFF (0.40f * TILT_G)
 #define LEAP_SPEED 20.0f
 #define WANDER_FAR 12.0f  // beyond this from centre, the next wander goes home
 
