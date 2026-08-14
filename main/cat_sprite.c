@@ -37,6 +37,7 @@ enum {
     C_BATT_Y,
     C_BATT_R,
     C_BATT_B,
+    C_BLACK,
     C_COUNT,
 };
 
@@ -55,6 +56,7 @@ static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_BATT_Y] = {228, 190, 70},
     [C_BATT_R] = {224, 80, 70},
     [C_BATT_B] = {90, 170, 235},
+    [C_BLACK] = {0, 0, 0},
 };
 
 #define SWAP16(v) ((uint16_t)((((v) >> 8) & 0xFF) | (((v) & 0xFF) << 8)))
@@ -235,6 +237,7 @@ static struct {
     float heart_spawn;
     int batt_pct;        // -1 until the first reading arrives
     bool batt_chg;
+    bool batt_screen;    // full-screen battery view (tap the corner bar)
     uint32_t rng;
 } s;
 
@@ -376,6 +379,24 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const bool tap_on_cat = released_tap && touch_near_cat(s.last_x, s.last_y);
     const int side_of = (s.last_x < RUN_ZONE_L) ? -1 : (s.last_x > RUN_ZONE_R) ? 1 : 0;
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
+
+    // The battery view swallows all interaction: one tap toggles back out.
+    const bool tap_on_batt = released_tap && s.last_x >= CANVAS_W - 15.0f &&
+                             s.last_y <= 6.0f;
+    if (s.batt_screen) {
+        if (released_tap) {
+            s.batt_screen = false;
+        }
+        // Let any purr fade out while the gauge is up.
+        s.purr = fmaxf(0.0f, s.purr - PET_RAMP_DOWN * dt);
+        s.was_down = touch->down;
+        return;
+    }
+    if (tap_on_batt && s.batt_pct >= 0) {
+        s.batt_screen = true;
+        s.was_down = touch->down;
+        return;
+    }
 
     const bool interruptible = s.mode != M_LEAP && s.mode != M_BIG_JUMP;
 
@@ -714,7 +735,7 @@ static void compose(void)
         }
     }
 
-    // Tiny battery bar, top right: 8x3 body + tip nub, 6 fill cells.
+    // Tiny battery bar, top right: a plain closed 8x3 rectangle, 6 fill cells.
     if (s.batt_pct >= 0) {
         const int bx = CANVAS_W - 13, by = 1;
         for (int x = 0; x < 8; x++) {
@@ -722,7 +743,7 @@ static void compose(void)
             px(bx + x, by + 2, C_OUT);
         }
         px(bx, by + 1, C_OUT);
-        // Plain rectangle: no tip nub.
+        px(bx + 7, by + 1, C_OUT);
         const int fill = (s.batt_pct * 6 + 50) / 100;
         uint8_t col = C_BATT_G;
         if (s.batt_chg) {
@@ -738,6 +759,83 @@ static void compose(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Full-screen battery view: black screen, a large gauge, percent below.
+// ---------------------------------------------------------------------------
+
+// 3x5 digit font, rows top to bottom, bit 2 = left pixel.
+static const uint8_t k_font[11][5] = {
+    {7, 5, 5, 5, 7},  // 0
+    {2, 6, 2, 2, 7},  // 1
+    {7, 1, 7, 4, 7},  // 2
+    {7, 1, 7, 1, 7},  // 3
+    {5, 5, 7, 1, 1},  // 4
+    {7, 4, 7, 1, 7},  // 5
+    {7, 4, 7, 5, 7},  // 6
+    {7, 1, 1, 1, 1},  // 7
+    {7, 5, 7, 5, 7},  // 8
+    {7, 5, 7, 1, 7},  // 9
+    {5, 1, 2, 4, 5},  // %
+};
+
+static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
+{
+    for (int y = 0; y < 5; y++) {
+        for (int x = 0; x < 3; x++) {
+            if (k_font[glyph][y] & (4 >> x)) {
+                px(gx + x, gy + y, col);
+            }
+        }
+    }
+}
+
+static void compose_battery(void)
+{
+    memset(s_canvas, C_BLACK, sizeof(s_canvas));
+
+    const int pct = (s.batt_pct >= 0) ? s.batt_pct : 0;
+    uint8_t col = C_BATT_G;
+    if (s.batt_chg) {
+        col = C_BATT_B;
+    } else if (pct <= 15) {
+        col = C_BATT_R;
+    } else if (pct <= 40) {
+        col = C_BATT_Y;
+    }
+
+    // Gauge: 32x8 outline centred, 30x6 fill inside.
+    const int bx = (CANVAS_W - 32) / 2, by = 22;
+    for (int x = 0; x < 32; x++) {
+        px(bx + x, by, C_BODY);
+        px(bx + x, by + 7, C_BODY);
+    }
+    for (int y = 1; y < 7; y++) {
+        px(bx, by + y, C_BODY);
+        px(bx + 31, by + y, C_BODY);
+    }
+    const int fill = (pct * 30 + 50) / 100;
+    for (int y = 1; y < 7; y++) {
+        for (int x = 0; x < fill; x++) {
+            px(bx + 1 + x, by + y, col);
+        }
+    }
+
+    // "NN%" centred below.
+    int glyphs[4], n = 0;
+    if (pct >= 100) glyphs[n++] = 1;
+    if (pct >= 100) glyphs[n++] = 0;
+    if (pct < 100 && pct >= 10) glyphs[n++] = pct / 10;
+    if (pct < 10) glyphs[n++] = pct;
+    else glyphs[n++] = pct % 10;
+    glyphs[n++] = 10;  // %
+    const int tw = n * 4 - 1;
+    int tx = (CANVAS_W - tw) / 2;
+    for (int i = 0; i < n; i++) {
+        draw_glyph(tx, by + 11, glyphs[i], C_BODY);
+        tx += 4;
+    }
+}
+
 static int s_flush_errors;
 
 int cat_flush_errors(void)
@@ -747,7 +845,11 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
-    compose();
+    if (s.batt_screen) {
+        compose_battery();
+    } else {
+        compose();
+    }
 
     const uint16_t *bg = cat_bg[((int)(s.bg_t * BG_FPS)) % BG_FRAMES];
 
