@@ -38,10 +38,10 @@ enum {
 static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_BG] = {36, 33, 48},
     [C_BG2] = {29, 26, 39},
-    [C_OUT] = {30, 24, 36},
-    [C_BODY] = {235, 235, 244},
-    [C_SHADE] = {166, 166, 186},
-    [C_PINK] = {222, 130, 156},
+    [C_OUT] = {47, 47, 46},
+    [C_BODY] = {224, 224, 224},
+    [C_SHADE] = {181, 181, 181},
+    [C_PINK] = {222, 117, 134},
     [C_DARK] = {44, 38, 48},
     [C_HEART] = {232, 80, 112},
     [C_SLEEP] = {150, 170, 196},
@@ -60,7 +60,7 @@ static uint8_t s_canvas[CANVAS_W * CANVAS_H];
 
 #define FLOOR_Y 46
 #define CHECKER 6
-#define SPRITE_W 16
+#define SPRITE_W ANIM_W
 #define POS_MIN 1.0f
 #define POS_MAX (CANVAS_W - SPRITE_W - 1.0f)
 #define CENTRE ((CANVAS_W - SPRITE_W) / 2.0f)
@@ -159,12 +159,12 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
     [M_PROFILE] = {ANIM_PROFILE_TAIL, ANIM_PROFILE_TAIL_N, 3.5f, true},
     [M_CLEAN_PAW] = {ANIM_CLEAN_PAW, ANIM_CLEAN_PAW_N, 5.0f, true},
     [M_CLEAN_EAR] = {ANIM_CLEAN_EAR, ANIM_CLEAN_EAR_N, 5.0f, true},
-    [M_TROT] = {ANIM_TROT, ANIM_TROT_N, 10.0f, true},
-    [M_LEAP] = {ANIM_LEAP, ANIM_LEAP_N, 12.0f, false},
+    [M_TROT] = {ANIM_TROT, ANIM_TROT_N, 12.0f, true},
+    [M_LEAP] = {ANIM_LEAP, ANIM_LEAP_N, 14.0f, false},
     [M_SLEEP] = {ANIM_SLEEP, ANIM_SLEEP_N, 2.0f, true},
     [M_PAWING] = {ANIM_PAWING, ANIM_PAWING_N, 6.0f, true},
     [M_BIG_JUMP] = {ANIM_BIG_JUMP, ANIM_BIG_JUMP_N, 12.0f, false},
-    [M_ANGRY] = {ANIM_ANGRY, ANIM_ANGRY_N, 8.0f, true},
+    [M_ANGRY] = {ANIM_ANGRY, ANIM_ANGRY_N, 9.0f, true},
     [M_PET] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 5.5f, true},
 };
 
@@ -428,7 +428,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
         case M_LEAP: {
             // Travel during the airborne middle of the cycle.
             const int f = anim_frame();
-            if (f >= 1 && f <= 4) {
+            if (f >= 1 && f <= 5) {
                 s.pos_x += (float)s.move_dir * LEAP_SPEED * dt;
                 if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
                 if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
@@ -577,7 +577,7 @@ static void compose(void)
 
     const int x0 = (int)(s.pos_x + 0.5f);
     const int y0 = FLOOR_Y - f->nrows - f->lift;
-    stampf(x0, y0, f->rows, f->nrows, !s.facing_left);
+    stampf(x0, y0, f->rows, f->nrows, s.facing_left);
 
     if (s.mode == M_SLEEP) {
         const int wob = (int)(1.5f * sinf(s.t * 1.3f));

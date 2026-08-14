@@ -11,7 +11,7 @@ import glob
 import os
 import sys
 
-SPRITE_W = 16
+SPRITE_W = None  # derived from the first frame seen
 CHARSET = set('.#wspk^Wrz')
 
 
@@ -54,14 +54,18 @@ def main():
         '',
     ]
 
+    global SPRITE_W
+    widths = []
     for path in files:
         name = os.path.basename(path)[5:-4]
         cname = name.upper()
         frames = parse(path)
         for i, (rows, lift) in enumerate(frames):
             for j, r in enumerate(rows):
+                if SPRITE_W is None:
+                    SPRITE_W = len(r)
                 if len(r) != SPRITE_W:
-                    sys.exit(f'{name} frame {i+1} row {j+1}: {len(r)} chars: {r!r}')
+                    sys.exit(f'{name} frame {i+1} row {j+1}: {len(r)} chars (want {SPRITE_W}): {r!r}')
                 bad = set(r) - CHARSET
                 if bad:
                     sys.exit(f'{name} frame {i+1} row {j+1}: bad chars {bad}')
@@ -78,6 +82,8 @@ def main():
         lines.append('')
         print(f'{name}: {len(frames)} frames')
 
+    lines.append(f'#define ANIM_W {SPRITE_W}')
+    lines.append('')
     open(out_path, 'w').write('\n'.join(lines) + '\n')
     print(f'wrote {out_path}')
 

@@ -19,10 +19,10 @@ import zlib
 
 PAL = {
     '.': None,
-    '#': (30, 24, 36),
-    'w': (235, 235, 244),
-    's': (166, 166, 186),
-    'p': (222, 130, 156),
+    '#': (47, 47, 46),
+    'w': (224, 224, 224),
+    's': (181, 181, 181),
+    'p': (222, 117, 134),
     'k': (44, 38, 48),
     '^': (44, 38, 48),
     'W': (255, 255, 255),
@@ -31,8 +31,8 @@ PAL = {
 }
 BG = [(36, 33, 48), (29, 26, 39)]
 
-SPRITE_W = 16
-CELL_W = 22
+SPRITE_W = None  # derived from the first frame
+CELL_W = 24
 CELL_H = 26
 BASELINE = 22  # feet row within the cell
 
@@ -73,6 +73,12 @@ def main():
     out = sys.argv[2]
     scale = int(sys.argv[3]) if len(sys.argv) > 3 else 6
 
+    global SPRITE_W, CELL_W, CELL_H, BASELINE
+    SPRITE_W = len(frames[0][0][0])
+    maxrows = max(len(rows) for rows, _ in frames)
+    CELL_W = SPRITE_W + 8
+    CELL_H = maxrows + 8
+    BASELINE = CELL_H - 4
     bad = False
     for i, (rows, _) in enumerate(frames):
         for j, r in enumerate(rows):
