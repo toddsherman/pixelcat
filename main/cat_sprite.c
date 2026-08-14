@@ -184,10 +184,11 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
 #define HOLD_S 0.35f
 #define DOUBLE_TAP_S 0.9f
 #define TROT_SPEED 7.0f
-// Tilt (m/s^2 along screen x) that starts and stops a tilt walk; hysteresis
-// so a wobbling hand does not stutter him.
-#define TILT_ON 2.2f
-#define TILT_OFF 1.5f
+// Tilt (m/s^2 along screen x) that starts and stops a tilt walk: he only
+// commits at a steep ~45 degree tilt (9.81 * sin 45 = 6.9), and keeps walking
+// until it eases well below that.
+#define TILT_ON 6.9f
+#define TILT_OFF 5.2f
 #define LEAP_SPEED 20.0f
 #define WANDER_FAR 12.0f  // beyond this from centre, the next wander goes home
 
@@ -675,13 +676,13 @@ static void compose(void)
 
     // Tiny battery bar, top right: 8x3 body + tip nub, 6 fill cells.
     if (s.batt_pct >= 0) {
-        const int bx = CANVAS_W - 10, by = 1;
+        const int bx = CANVAS_W - 13, by = 1;
         for (int x = 0; x < 8; x++) {
             px(bx + x, by, C_OUT);
             px(bx + x, by + 2, C_OUT);
         }
         px(bx, by + 1, C_OUT);
-        px(bx + 8, by + 1, C_OUT);  // tip
+        px(bx + 8, by + 1, C_OUT);  // tip (kept clear of the rounded corner)
         const int fill = (s.batt_pct * 6 + 50) / 100;
         uint8_t col = C_BATT_G;
         if (s.batt_chg) {

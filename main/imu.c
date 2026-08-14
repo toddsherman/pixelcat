@@ -47,9 +47,11 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus)
 
 float imu_tilt_x(void)
 {
-    // Per the board's measured axis mapping (see fluidbox), screen-x gravity
-    // is the negated low-passed IMU y axis.
-    return s_ready ? -s_lp[1] : 0.0f;
+    // On the V2 board the IMU is mounted rotated relative to the V1 the
+    // fluidbox mapping was measured on: reclining the device registers on the
+    // y axis, left/right roll on the x axis. (Confirmed empirically: a stand's
+    // backward recline showed up on y and falsely read as sideways tilt.)
+    return s_ready ? -s_lp[0] : 0.0f;
 }
 
 float imu_shake(void)
