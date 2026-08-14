@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #define LCD_HOST SPI2_HOST
 #define LCD_CS GPIO_NUM_12
@@ -69,6 +70,74 @@ static bool IRAM_ATTR on_trans_done(esp_lcd_panel_io_handle_t io,
     return higher_priority_woken == pdTRUE;
 }
 
+// ---------------------------------------------------------------------------
+// Hardware reset via the TCA9554 IO expander.
+//
+// The panel's reset line is NOT wired to an ESP32 pin: it sits on the board's
+// IO expander, shared with the touch controller's reset (plus SD on another
+// pin). A chip reset therefore never resets the panel — and an esptool reflash
+// interrupts the panel mid-QSPI-transfer, which can wedge its controller in a
+// state the software-only init cannot recover. Every command then reports OK
+// into a black screen.
+//
+// Waveshare's own examples fix this by pulsing expander pins 0, 1, 2 and 6
+// low for 20 ms before display init on every boot. Do exactly that, preserving
+// the other pins (bit 4 is the PWR button input).
+// ---------------------------------------------------------------------------
+
+#define EXPANDER_ADDR 0x20
+#define EXPANDER_REG_OUTPUT 0x01
+#define EXPANDER_REG_CONFIG 0x03
+#define EXPANDER_RESET_BITS 0x47  // pins 0, 1, 2, 6
+
+static esp_err_t expander_hard_reset(i2c_master_bus_handle_t bus)
+{
+    const i2c_device_config_t cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = EXPANDER_ADDR,
+        .scl_speed_hz = 400000,
+    };
+    i2c_master_dev_handle_t dev;
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &cfg, &dev), TAG, "expander add");
+
+    esp_err_t ret = ESP_OK;
+    uint8_t out = 0xFF, dir = 0xFF;
+
+    // Read-modify-write both registers so untouched pins keep their state.
+    uint8_t reg = EXPANDER_REG_OUTPUT;
+    if (i2c_master_transmit_receive(dev, &reg, 1, &out, 1, 50) != ESP_OK) goto fail;
+    reg = EXPANDER_REG_CONFIG;
+    if (i2c_master_transmit_receive(dev, &reg, 1, &dir, 1, 50) != ESP_OK) goto fail;
+
+    {
+        // Assert: output bits low first, then switch the pins to output.
+        const uint8_t low[2] = {EXPANDER_REG_OUTPUT, (uint8_t)(out & ~EXPANDER_RESET_BITS)};
+        const uint8_t drv[2] = {EXPANDER_REG_CONFIG, (uint8_t)(dir & ~EXPANDER_RESET_BITS)};
+        if (i2c_master_transmit(dev, low, 2, 50) != ESP_OK) goto fail;
+        if (i2c_master_transmit(dev, drv, 2, 50) != ESP_OK) goto fail;
+
+        vTaskDelay(pdMS_TO_TICKS(20));
+
+        // Release: drive high (kept as outputs, which holds reset deasserted
+        // more firmly than the pull-ups alone).
+        const uint8_t high[2] = {EXPANDER_REG_OUTPUT, (uint8_t)(out | EXPANDER_RESET_BITS)};
+        if (i2c_master_transmit(dev, high, 2, 50) != ESP_OK) goto fail;
+    }
+
+    // Panel and touch both need a beat after a hardware reset before they
+    // accept commands.
+    vTaskDelay(pdMS_TO_TICKS(150));
+    ESP_LOGI(TAG, "panel/touch hardware reset via IO expander done");
+    goto out;
+
+fail:
+    ret = ESP_FAIL;
+    ESP_LOGW(TAG, "IO expander reset failed; continuing with soft init only");
+out:
+    i2c_master_bus_rm_device(dev);
+    return ret;
+}
+
 // The two board revisions differ only in the touch controller address and a
 // 16 pixel horizontal offset on the panel.
 static bool detect_v2(i2c_master_bus_handle_t bus)
@@ -84,6 +153,11 @@ static bool detect_v2(i2c_master_bus_handle_t bus)
 
 esp_err_t display_init(i2c_master_bus_handle_t i2c_bus)
 {
+    // Hardware-reset the panel (and touch) before anything talks to them, so
+    // every boot starts from a clean controller state no matter how the
+    // previous session ended. See expander_hard_reset() for why.
+    expander_hard_reset(i2c_bus);
+
     s_is_v2 = detect_v2(i2c_bus);
 
     s_buffers_free = xSemaphoreCreateCounting(2, 2);
