@@ -90,8 +90,10 @@ static int daypart_for(int year, int mon, int day, int minutes)
     const int rise = k_sunrise[doy - 1] + dst;
     const int set = k_sunset[doy - 1] + dst;
 
-    if (minutes >= rise - 40 && minutes < rise + 20) return BG_DAWN;
-    if (minutes >= rise + 20 && minutes < set - 30) return BG_DAY;
+    // The sky only visibly brightens in the last ~10 minutes before sunrise,
+    // so night holds until then.
+    if (minutes >= rise - 10 && minutes < rise + 25) return BG_DAWN;
+    if (minutes >= rise + 25 && minutes < set - 30) return BG_DAY;
     if (minutes >= set - 30 && minutes < set + 15) return BG_DUSK;
     if (minutes >= set + 15 && minutes < set + 50) return BG_TWILIGHT;
     return BG_NIGHT;
