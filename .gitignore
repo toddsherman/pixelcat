@@ -7,3 +7,4 @@ tools/preview/cat_host.c
 tools/preview/cat_sprite_host.c
 __pycache__/
 main/wifi_secrets.h
+.DS_Store
