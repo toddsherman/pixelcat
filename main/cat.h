@@ -43,6 +43,7 @@ bool cat_take_hiss(void);
 bool cat_take_step(void);
 bool cat_take_boing(void);
 bool cat_take_slurp(void);
+bool cat_take_swipe(void);
 
 cat_state_t cat_state(void);
 

@@ -202,6 +202,7 @@ static struct {
     bool step;
     bool boing;
     bool slurp;
+    bool swipe;
     int prev_frame;
 
     bool was_down;
@@ -531,8 +532,11 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
         if (s.mode == M_TROT && (frame == 1 || frame == 5)) {
             s.step = true;
         }
-        if (s.mode == M_CLEAN_PAW && frame == 1) {
+        if ((s.mode == M_CLEAN_PAW || s.mode == M_CLEAN_EAR) && frame == 1) {
             s.slurp = true;
+        }
+        if (s.mode == M_PAWING && frame == 2) {
+            s.swipe = true;
         }
         s.prev_frame = frame;
     }
@@ -558,6 +562,13 @@ bool cat_take_slurp(void)
 {
     const bool v = s.slurp;
     s.slurp = false;
+    return v;
+}
+
+bool cat_take_swipe(void)
+{
+    const bool v = s.swipe;
+    s.swipe = false;
     return v;
 }
 

@@ -76,6 +76,9 @@ static void cat_task(void *arg)
         if (cat_take_slurp()) {
             audio_slurp();
         }
+        if (cat_take_swipe()) {
+            audio_swipe();
+        }
 
         cat_render();
 

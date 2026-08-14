@@ -27,6 +27,7 @@ static volatile bool s_hiss_pending;
 static volatile bool s_step_pending;
 static volatile bool s_boing_pending;
 static volatile bool s_slurp_pending;
+static volatile bool s_swipe_pending;
 
 static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
 {
@@ -141,6 +142,8 @@ typedef struct {
     float boing_ph;
     float slurp_t;    // seconds into the slurp, or -1
     float slurp_lpf;
+    float swipe_t;    // seconds into the swipe, or -1
+    float swipe_lpf;
 } purr_state_t;
 
 static void fill_frame(purr_state_t *st, int16_t *out)
@@ -180,6 +183,10 @@ static void fill_frame(purr_state_t *st, int16_t *out)
     if (s_slurp_pending) {
         s_slurp_pending = false;
         st->slurp_t = 0.0f;
+    }
+    if (s_swipe_pending) {
+        s_swipe_pending = false;
+        st->swipe_t = 0.0f;
     }
 
     for (int i = 0; i < AUDIO_FRAME_SAMPLES; i++) {
@@ -285,6 +292,25 @@ static void fill_frame(purr_state_t *st, int16_t *out)
             }
         }
 
+        // Swipe: airy high-passed noise under a 120 ms bell — the whisper of
+        // a paw cutting through air. High-pass comes from subtracting the
+        // low-passed noise from the raw noise.
+        if (st->swipe_t >= 0.0f) {
+            const float t = st->swipe_t;
+            const float dur = 0.12f;
+            if (t < dur) {
+                const float u = t / dur;
+                const float n = frand();
+                const float kf = 1.0f - expf(-TWO_PI * 900.0f * dt);
+                st->swipe_lpf += kf * (n - st->swipe_lpf);
+                const float bell = sinf(3.14159265f * u);
+                s += 0.13f * bell * (n - st->swipe_lpf);
+                st->swipe_t += dt;
+            } else {
+                st->swipe_t = -1.0f;
+            }
+        }
+
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         out[i] = (int16_t)(s * 30000.0f);
@@ -295,7 +321,7 @@ static void purr_task(void *arg)
 {
     (void)arg;
     static int16_t frame[AUDIO_FRAME_SAMPLES];
-    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f};
+    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f};
 
     for (;;) {
         fill_frame(&st, frame);
@@ -348,4 +374,9 @@ void audio_boing(void)
 void audio_slurp(void)
 {
     s_slurp_pending = true;
+}
+
+void audio_swipe(void)
+{
+    s_swipe_pending = true;
 }

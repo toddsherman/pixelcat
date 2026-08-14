@@ -568,6 +568,7 @@ bool cat_take_hiss(void)
 bool cat_take_step(void) { return false; }
 bool cat_take_boing(void) { return false; }
 bool cat_take_slurp(void) { return false; }
+bool cat_take_swipe(void) { return false; }
 
 bool cat_take_chirp(void)
 {

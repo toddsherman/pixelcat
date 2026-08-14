@@ -25,3 +25,6 @@ void audio_boing(void);
 
 // A quiet slurp for paw-licking.
 void audio_slurp(void);
+
+// A soft airy swipe for pawing at things.
+void audio_swipe(void);
