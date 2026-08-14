@@ -184,11 +184,14 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
 #define HOLD_S 0.35f
 #define DOUBLE_TAP_S 0.9f
 #define TROT_SPEED 7.0f
-// Tilt (m/s^2 along screen x) that starts and stops a tilt walk: he only
-// commits at a steep ~45 degree tilt (9.81 * sin 45 = 6.9), and keeps walking
-// until it eases well below that.
-#define TILT_ON 6.9f
-#define TILT_OFF 5.2f
+// Tilt thresholds, as a fraction of full gravity (sin of the tilt angle).
+// 10-30%% walks him; past 30%% he bounds in chained leaps. Each band has a
+// little hysteresis so he does not stutter at the boundary.
+#define TILT_G 9.81f
+#define TILT_WALK_ON (0.10f * TILT_G)
+#define TILT_WALK_OFF (0.08f * TILT_G)
+#define TILT_LEAP_ON (0.30f * TILT_G)
+#define TILT_LEAP_OFF (0.26f * TILT_G)
 #define LEAP_SPEED 20.0f
 #define WANDER_FAR 12.0f  // beyond this from centre, the next wander goes home
 
@@ -209,6 +212,7 @@ static struct {
     float move_target;   // trot destination while wandering
     bool wandering;      // trot has a destination (vs tilt-driven)
     bool tilt_walk;      // trot is being driven by device tilt
+    bool tilt_leap;      // leap chain is being driven by device tilt
     bool facing_left;
     int move_dir;        // -1 left, +1 right, for held trot and leaps
     float purr;
@@ -375,12 +379,23 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const bool interruptible = s.mode != M_LEAP && s.mode != M_BIG_JUMP;
 
     const int tilt_dir = (tilt < 0) ? -1 : 1;
-    const bool tilted = fabsf(tilt) > TILT_ON;
-    if (tilted && s.mode != M_SLEEP) {
+    const float tilt_mag = fabsf(tilt);
+    if (tilt_mag > TILT_WALK_ON && s.mode != M_SLEEP) {
         s.since_touch = 0.0f;
     }
-    if (tilted && interruptible && s.mode != M_ANGRY && s.mode != M_PET &&
-        s.mode != M_SLEEP && !(s.mode == M_TROT && s.tilt_walk && tilt_dir == s.move_dir)) {
+    const bool tilt_ok = interruptible && s.mode != M_ANGRY && s.mode != M_PET &&
+                         s.mode != M_SLEEP;
+    if (tilt_ok && tilt_mag > TILT_LEAP_ON && s.mode != M_LEAP) {
+        // Steep tilt: bound that way in chained leaps.
+        s.move_dir = tilt_dir;
+        s.facing_left = tilt_dir < 0;
+        s.wandering = false;
+        s.tilt_walk = false;
+        s.tilt_leap = true;
+        enter(M_LEAP);
+        s.boing = true;
+    } else if (tilt_ok && tilt_mag > TILT_WALK_ON && tilt_mag <= TILT_LEAP_ON &&
+               !(s.mode == M_TROT && s.tilt_walk && tilt_dir == s.move_dir)) {
         s.move_dir = tilt_dir;
         s.facing_left = tilt_dir < 0;
         s.wandering = false;
@@ -413,6 +428,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 if (s.mode == M_SLEEP) {
                     s.chirp = true;
                 }
+                s.tilt_leap = false;
                 enter(M_LEAP);
                 s.boing = true;
             } else {
@@ -434,14 +450,15 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 
         case M_TROT:
             if (s.tilt_walk) {
-                if (fabsf(tilt) < TILT_OFF) {
+                if (tilt_mag < TILT_WALK_OFF) {
                     s.tilt_walk = false;
                     to_passive();
                     break;
                 }
-                // Steeper tilt, brisker trot.
-                const float mag = fminf(fabsf(tilt) / 6.0f, 1.0f);
-                s.pos_x += (float)s.move_dir * TROT_SPEED * (0.6f + 0.6f * mag) * dt;
+                // Brisker toward the top of the walking band.
+                const float mag = fminf((tilt_mag - TILT_WALK_ON) /
+                                        (TILT_LEAP_ON - TILT_WALK_ON), 1.0f);
+                s.pos_x += (float)s.move_dir * TROT_SPEED * (0.7f + 0.5f * mag) * dt;
                 if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
                 if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
                 break;
@@ -471,12 +488,27 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
             }
             if (anim_done()) {
-                // A pending tap on the same side chains another leap.
-                if (s.tap_side == s.move_dir && s.tap_age < DOUBLE_TAP_S) {
+                if (s.tilt_leap && tilt_mag > TILT_LEAP_OFF) {
+                    // Still held steep: bound again, tracking the direction.
+                    s.move_dir = tilt_dir;
+                    s.facing_left = tilt_dir < 0;
+                    enter(M_LEAP);
+                    s.boing = true;
+                } else if (s.tilt_leap && tilt_mag > TILT_WALK_OFF) {
+                    // Eased into the walking band mid-bound: land into a trot.
+                    s.tilt_leap = false;
+                    s.tilt_walk = true;
+                    s.move_dir = tilt_dir;
+                    s.facing_left = tilt_dir < 0;
+                    enter(M_TROT);
+                } else if (!s.tilt_leap && s.tap_side == s.move_dir &&
+                           s.tap_age < DOUBLE_TAP_S) {
+                    // A pending tap on the same side chains another leap.
                     s.tap_side = 0;
                     enter(M_LEAP);
                     s.boing = true;
                 } else {
+                    s.tilt_leap = false;
                     to_passive();
                 }
             }
