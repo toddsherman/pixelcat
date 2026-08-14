@@ -1,0 +1,8 @@
+build/
+managed_components/
+sdkconfig
+sdkconfig.old
+tools/preview/out/
+tools/preview/cat_host.c
+tools/preview/cat_sprite_host.c
+__pycache__/

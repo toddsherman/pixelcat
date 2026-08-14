@@ -1,0 +1,23 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# 16 MB QIO flash, single large app partition (no OTA needed here).
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# Octal PSRAM. The renderer and simulation live in internal SRAM, but keeping
+# PSRAM enabled leaves headroom for future assets.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# The default is 160 MHz; the simulation needs every cycle.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# 1 kHz tick so the render and sim tasks can pace themselves precisely.
+CONFIG_FREERTOS_HZ=1000
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
