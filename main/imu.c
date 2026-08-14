@@ -45,6 +45,13 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus)
     return ESP_OK;
 }
 
+float imu_tilt_x(void)
+{
+    // Per the board's measured axis mapping (see fluidbox), screen-x gravity
+    // is the negated low-passed IMU y axis.
+    return s_ready ? -s_lp[1] : 0.0f;
+}
+
 float imu_shake(void)
 {
     if (!s_ready) {

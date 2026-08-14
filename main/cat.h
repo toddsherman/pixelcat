@@ -23,8 +23,12 @@ typedef struct {
 void cat_init(void);
 
 // Advance animation and behaviour by dt seconds. shake is the smoothed shake
-// magnitude from the IMU in m/s^2 above gravity (0 if there is no IMU).
-void cat_update(float dt, const cat_touch_t *touch, float shake);
+// magnitude from the IMU in m/s^2 above gravity; tilt is the screen-x gravity
+// component in m/s^2, positive = right side down (both 0 if there is no IMU).
+void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt);
+
+// Feed the fuel gauge reading for the corner battery bar (-1 = unknown).
+void cat_set_battery(int percent, bool charging);
 
 // Compose the canvas and push every band to the display.
 void cat_render(void);

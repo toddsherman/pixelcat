@@ -416,9 +416,10 @@ static void spawn_heart(float cx, float cy)
     }
 }
 
-void cat_update(float dt, const cat_touch_t *touch, float shake)
+void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
-    (void)shake;  // the big cat has no shake reaction
+    (void)shake;
+    (void)tilt;  // the big cat has no shake reaction
     s.t += dt;
     s.breath_ph += dt * ((s.state == CAT_SLEEPING) ? 0.45f : 0.9f);
 
@@ -569,6 +570,7 @@ bool cat_take_step(void) { return false; }
 bool cat_take_boing(void) { return false; }
 bool cat_take_slurp(void) { return false; }
 bool cat_take_swipe(void) { return false; }
+void cat_set_battery(int percent, bool charging) { (void)percent; (void)charging; }
 
 bool cat_take_chirp(void)
 {

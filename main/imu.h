@@ -11,3 +11,7 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus);
 // Smoothed shake magnitude in m/s^2 above gravity: ~0 at rest, 2-5 when
 // handled, well past 8 when genuinely shaken.
 float imu_shake(void);
+
+// Gravity component along the screen's horizontal axis, m/s^2. Positive means
+// the device's right side is tilted down. Valid after imu_shake() has run.
+float imu_tilt_x(void);

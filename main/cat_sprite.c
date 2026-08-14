@@ -33,6 +33,10 @@ enum {
     C_HEART,
     C_SLEEP,
     C_WHITE,
+    C_BATT_G,
+    C_BATT_Y,
+    C_BATT_R,
+    C_BATT_B,
     C_COUNT,
 };
 
@@ -47,6 +51,10 @@ static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_HEART] = {232, 80, 112},
     [C_SLEEP] = {150, 170, 196},
     [C_WHITE] = {255, 255, 255},
+    [C_BATT_G] = {96, 200, 96},
+    [C_BATT_Y] = {228, 190, 70},
+    [C_BATT_R] = {224, 80, 70},
+    [C_BATT_B] = {90, 170, 235},
 };
 
 #define SWAP16(v) ((uint16_t)((((v) >> 8) & 0xFF) | (((v) & 0xFF) << 8)))
@@ -176,6 +184,10 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
 #define HOLD_S 0.35f
 #define DOUBLE_TAP_S 0.9f
 #define TROT_SPEED 7.0f
+// Tilt (m/s^2 along screen x) that starts and stops a tilt walk; hysteresis
+// so a wobbling hand does not stutter him.
+#define TILT_ON 2.2f
+#define TILT_OFF 1.5f
 #define LEAP_SPEED 20.0f
 #define WANDER_FAR 12.0f  // beyond this from centre, the next wander goes home
 
@@ -194,7 +206,8 @@ static struct {
     float since_touch;
     float pos_x;
     float move_target;   // trot destination while wandering
-    bool wandering;      // trot has a destination (vs held)
+    bool wandering;      // trot has a destination (vs tilt-driven)
+    bool tilt_walk;      // trot is being driven by device tilt
     bool facing_left;
     int move_dir;        // -1 left, +1 right, for held trot and leaps
     float purr;
@@ -214,6 +227,8 @@ static struct {
 
     heart_t hearts[MAX_HEARTS];
     float heart_spawn;
+    int batt_pct;        // -1 until the first reading arrives
+    bool batt_chg;
     uint32_t rng;
 } s;
 
@@ -299,6 +314,7 @@ void cat_init(void)
     s.decide_in = 3.0f;
     s.pos_x = CENTRE;
     s.facing_left = true;
+    s.batt_pct = -1;
     s.rng = 0x9E3779B9;
 
     for (int i = 0; i < C_COUNT; i++) {
@@ -309,7 +325,7 @@ void cat_init(void)
     }
 }
 
-void cat_update(float dt, const cat_touch_t *touch, float shake)
+void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
     s.t += dt;
     s.bg_t += dt;
@@ -354,12 +370,22 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
     const bool tap_on_cat = released_tap && touch_near_cat(s.last_x, s.last_y);
     const int side_of = (s.last_x < RUN_ZONE_L) ? -1 : (s.last_x > RUN_ZONE_R) ? 1 : 0;
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
-    const bool hold_side = touch->down && s.press_t >= HOLD_S && s.moved < 8.0f &&
-                           !touch_near_cat(tx, ty) &&
-                           (tx < RUN_ZONE_L || tx > RUN_ZONE_R);
-    const int hold_dir = (tx < RUN_ZONE_L) ? -1 : 1;
 
     const bool interruptible = s.mode != M_LEAP && s.mode != M_BIG_JUMP;
+
+    const int tilt_dir = (tilt < 0) ? -1 : 1;
+    const bool tilted = fabsf(tilt) > TILT_ON;
+    if (tilted && s.mode != M_SLEEP) {
+        s.since_touch = 0.0f;
+    }
+    if (tilted && interruptible && s.mode != M_ANGRY && s.mode != M_PET &&
+        s.mode != M_SLEEP && !(s.mode == M_TROT && s.tilt_walk && tilt_dir == s.move_dir)) {
+        s.move_dir = tilt_dir;
+        s.facing_left = tilt_dir < 0;
+        s.wandering = false;
+        s.tilt_walk = true;
+        enter(M_TROT);
+    }
 
     // --- global triggers, in priority order ---
     if (shake > SHAKE_HISS_THRESHOLD && s.mode != M_ANGRY) {
@@ -392,14 +418,6 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
                 s.tap_side = side_of;
                 s.tap_age = 0.0f;
             }
-        } else if (hold_side && s.mode != M_TROT && s.mode != M_PET) {
-            if (s.mode == M_SLEEP) {
-                s.chirp = true;
-            }
-            s.move_dir = hold_dir;
-            s.facing_left = hold_dir < 0;
-            s.wandering = false;
-            enter(M_TROT);
         }
     }
 
@@ -414,6 +432,19 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
             break;
 
         case M_TROT:
+            if (s.tilt_walk) {
+                if (fabsf(tilt) < TILT_OFF) {
+                    s.tilt_walk = false;
+                    to_passive();
+                    break;
+                }
+                // Steeper tilt, brisker trot.
+                const float mag = fminf(fabsf(tilt) / 6.0f, 1.0f);
+                s.pos_x += (float)s.move_dir * TROT_SPEED * (0.6f + 0.6f * mag) * dt;
+                if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
+                if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
+                break;
+            }
             if (s.wandering) {
                 const float dir = (s.move_target > s.pos_x) ? 1.0f : -1.0f;
                 s.pos_x += dir * TROT_SPEED * dt;
@@ -423,12 +454,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake)
                     to_passive();
                 }
             } else {
-                // Held: trot toward the held side until released or the wall.
-                if (!hold_side) {
-                    to_passive();
-                    break;
-                }
-                s.pos_x += (float)s.move_dir * TROT_SPEED * dt;
+                to_passive();
+                break;
             }
             if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
             if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
@@ -575,6 +602,12 @@ bool cat_take_swipe(void)
     return v;
 }
 
+void cat_set_battery(int percent, bool charging)
+{
+    s.batt_pct = percent;
+    s.batt_chg = charging;
+}
+
 float cat_purr_level(void)
 {
     return s.purr;
@@ -637,6 +670,29 @@ static void compose(void)
     for (int i = 0; i < MAX_HEARTS; i++) {
         if (s.hearts[i].alive) {
             stamp_fx((int)s.hearts[i].x - 2, (int)s.hearts[i].y - 2, HEART, 4);
+        }
+    }
+
+    // Tiny battery bar, top right: 8x3 body + tip nub, 6 fill cells.
+    if (s.batt_pct >= 0) {
+        const int bx = CANVAS_W - 10, by = 1;
+        for (int x = 0; x < 8; x++) {
+            px(bx + x, by, C_OUT);
+            px(bx + x, by + 2, C_OUT);
+        }
+        px(bx, by + 1, C_OUT);
+        px(bx + 8, by + 1, C_OUT);  // tip
+        const int fill = (s.batt_pct * 6 + 50) / 100;
+        uint8_t col = C_BATT_G;
+        if (s.batt_chg) {
+            col = C_BATT_B;
+        } else if (s.batt_pct <= 15) {
+            col = C_BATT_R;
+        } else if (s.batt_pct <= 40) {
+            col = C_BATT_Y;
+        }
+        for (int x = 0; x < 6; x++) {
+            px(bx + 1 + x, by + 1, (x < fill) ? col : C_DARK);
         }
     }
 }

@@ -51,25 +51,25 @@ int main(int argc, char **argv)
             t.down = true;
             t.x = (int16_t)(130 + 100.0f * (0.5f + 0.5f * __builtin_sinf(el * 6.0f)));
             t.y = 340;
-            cat_update(dt, &t, 0.0f);
+            cat_update(dt, &t, 0.0f, 0.0f);
         }
     } else if (want == 2) {
         // Poke: press and release without moving, then a beat.
         t.down = true; t.x = 184; t.y = 340;
-        cat_update(dt, &t, 0.0f);
-        cat_update(dt, &t, 0.0f);
+        cat_update(dt, &t, 0.0f, 0.0f);
+        cat_update(dt, &t, 0.0f, 0.0f);
         t.down = false;
         for (float el = 0; el < 0.3f; el += dt) {
-            cat_update(dt, &t, 0.0f);
+            cat_update(dt, &t, 0.0f, 0.0f);
         }
     } else if (want == 3) {
         cat_debug_force(6);  // sprite cat: M_SLEEP; big cat: ignored
         for (float el = 0; el < 2.0f; el += 0.5f) {
-            cat_update(0.5f, &t, 0.0f);
+            cat_update(0.5f, &t, 0.0f, 0.0f);
         }
     } else {
         for (float el = 0; el < seconds; el += dt) {
-            cat_update(dt, &t, 0.0f);
+            cat_update(dt, &t, 0.0f, 0.0f);
         }
     }
 

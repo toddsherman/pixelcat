@@ -9,6 +9,7 @@ idf_component_register(
         "cat.c"
         "cat_sprite.c"
         "cat_bg.c"
+        "battery.c"
     INCLUDE_DIRS "."
 )
 

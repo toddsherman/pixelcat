@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "battery.h"
 #include "button.h"
 #include "cat.h"
 #include "config.h"
@@ -45,6 +46,7 @@ static void cat_task(void *arg)
     TickType_t last_wake = xTaskGetTickCount();
     int64_t last_us = esp_timer_get_time();
     int64_t last_log_us = last_us;
+    int64_t last_batt_us = 0;
 
     for (;;) {
         const int64_t now = esp_timer_get_time();
@@ -58,7 +60,8 @@ static void cat_task(void *arg)
         touch_read(&ts);
 
         const cat_touch_t ct = {.down = ts.down, .x = ts.x, .y = ts.y};
-        cat_update(dt, &ct, imu_shake());
+        const float shake = imu_shake();
+        cat_update(dt, &ct, shake, imu_tilt_x());
 
         audio_set_purr(cat_purr_level());
         if (cat_take_chirp()) {
@@ -81,6 +84,15 @@ static void cat_task(void *arg)
         }
 
         cat_render();
+
+        if (now - last_batt_us > 5000000) {
+            last_batt_us = now;
+            int pct;
+            bool chg;
+            if (battery_read(&pct, &chg)) {
+                cat_set_battery(pct, chg);
+            }
+        }
 
         if (button_take_short_press()) {
             ESP_LOGI(TAG, "PWR pressed");
@@ -125,6 +137,9 @@ void app_main(void)
     }
     if (imu_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no IMU: the cat cannot be offended by shaking");
+    }
+    if (battery_init(s_i2c_bus) != ESP_OK) {
+        ESP_LOGW(TAG, "no fuel gauge: battery bar disabled");
     }
     if (audio_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no audio: the cat purrs in spirit only");
