@@ -570,6 +570,7 @@ bool cat_take_step(void) { return false; }
 bool cat_take_boing(void) { return false; }
 bool cat_take_slurp(void) { return false; }
 bool cat_take_swipe(void) { return false; }
+int cat_take_dash(void) { return 0; }
 void cat_set_battery(int percent, bool charging) { (void)percent; (void)charging; }
 
 bool cat_take_chirp(void)

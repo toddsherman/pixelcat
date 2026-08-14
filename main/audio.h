@@ -28,3 +28,7 @@ void audio_slurp(void);
 
 // A soft airy swipe for pawing at things.
 void audio_swipe(void);
+
+// A dash whoosh for leaps: pitch sweeps up for dir > 0 (right), down for
+// dir < 0 (left).
+void audio_dash(int dir);

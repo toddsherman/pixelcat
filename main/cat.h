@@ -49,6 +49,9 @@ bool cat_take_boing(void);
 bool cat_take_slurp(void);
 bool cat_take_swipe(void);
 
+// 0 = none, else the leap direction (-1 left, +1 right).
+int cat_take_dash(void);
+
 cat_state_t cat_state(void);
 
 // Cumulative count of failed band flushes, for diagnostics.

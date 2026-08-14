@@ -82,6 +82,10 @@ static void cat_task(void *arg)
         if (cat_take_swipe()) {
             audio_swipe();
         }
+        const int dash_dir = cat_take_dash();
+        if (dash_dir) {
+            audio_dash(dash_dir);
+        }
 
         cat_render();
 

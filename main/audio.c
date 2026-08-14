@@ -28,6 +28,7 @@ static volatile bool s_step_pending;
 static volatile bool s_boing_pending;
 static volatile bool s_slurp_pending;
 static volatile bool s_swipe_pending;
+static volatile int s_dash_pending;  // 0 none, else direction
 
 static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
 {
@@ -144,6 +145,10 @@ typedef struct {
     float slurp_lpf;
     float swipe_t;    // seconds into the swipe, or -1
     float swipe_lpf;
+    float dash_t;     // seconds into the dash, or -1
+    float dash_ph;
+    float dash_lpf;
+    int dash_dir;
 } purr_state_t;
 
 static void fill_frame(purr_state_t *st, int16_t *out)
@@ -187,6 +192,12 @@ static void fill_frame(purr_state_t *st, int16_t *out)
     if (s_swipe_pending) {
         s_swipe_pending = false;
         st->swipe_t = 0.0f;
+    }
+    if (s_dash_pending) {
+        st->dash_dir = s_dash_pending;
+        s_dash_pending = 0;
+        st->dash_t = 0.0f;
+        st->dash_ph = 0.0f;
     }
 
     for (int i = 0; i < AUDIO_FRAME_SAMPLES; i++) {
@@ -314,6 +325,27 @@ static void fill_frame(purr_state_t *st, int16_t *out)
             }
         }
 
+        // Dash: a quick whoosh of tilted noise plus a directional pitch
+        // sweep — rising when bounding right, falling when bounding left.
+        if (st->dash_t >= 0.0f) {
+            const float t = st->dash_t;
+            const float dur = 0.22f;
+            if (t < dur) {
+                const float u = t / dur;
+                const float n = frand();
+                const float kf = 1.0f - expf(-TWO_PI * 1400.0f * dt);
+                st->dash_lpf += kf * (n - st->dash_lpf);
+                const float bell = sinf(3.14159265f * u);
+                const float f = (st->dash_dir > 0) ? (420.0f + 480.0f * u)
+                                                   : (900.0f - 480.0f * u);
+                st->dash_ph += TWO_PI * f * dt;
+                s += bell * (0.16f * (n - st->dash_lpf) + 0.14f * sinf(st->dash_ph));
+                st->dash_t += dt;
+            } else {
+                st->dash_t = -1.0f;
+            }
+        }
+
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         out[i] = (int16_t)(s * 30000.0f);
@@ -324,7 +356,7 @@ static void purr_task(void *arg)
 {
     (void)arg;
     static int16_t frame[AUDIO_FRAME_SAMPLES];
-    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f};
+    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f};
 
     for (;;) {
         fill_frame(&st, frame);
@@ -382,4 +414,9 @@ void audio_slurp(void)
 void audio_swipe(void)
 {
     s_swipe_pending = true;
+}
+
+void audio_dash(int dir)
+{
+    s_dash_pending = (dir < 0) ? -1 : 1;
 }

@@ -192,7 +192,7 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
 #define TILT_WALK_OFF (0.08f * TILT_G)
 #define TILT_LEAP_ON (0.45f * TILT_G)
 #define TILT_LEAP_OFF (0.40f * TILT_G)
-#define LEAP_SPEED 20.0f
+#define LEAP_SPEED 34.0f
 #define WANDER_FAR 12.0f  // beyond this from centre, the next wander goes home
 
 typedef struct {
@@ -223,6 +223,7 @@ static struct {
     bool boing;
     bool slurp;
     bool swipe;
+    int dash;            // pending dash direction, 0 = none
     int prev_frame;
 
     bool was_down;
@@ -393,7 +394,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         s.tilt_walk = false;
         s.tilt_leap = true;
         enter(M_LEAP);
-        s.boing = true;
+        s.dash = tilt_dir;
     } else if (tilt_ok && tilt_mag > TILT_WALK_ON && tilt_mag <= TILT_LEAP_ON &&
                !(s.mode == M_TROT && s.tilt_walk && tilt_dir == s.move_dir)) {
         s.move_dir = tilt_dir;
@@ -430,7 +431,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 }
                 s.tilt_leap = false;
                 enter(M_LEAP);
-                s.boing = true;
+                s.dash = side_of;
             } else {
                 s.tap_side = side_of;
                 s.tap_age = 0.0f;
@@ -493,7 +494,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                     s.move_dir = tilt_dir;
                     s.facing_left = tilt_dir < 0;
                     enter(M_LEAP);
-                    s.boing = true;
+                    s.dash = tilt_dir;
                 } else if (s.tilt_leap && tilt_mag > TILT_WALK_OFF) {
                     // Eased into the walking band mid-bound: land into a trot.
                     s.tilt_leap = false;
@@ -506,7 +507,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                     // A pending tap on the same side chains another leap.
                     s.tap_side = 0;
                     enter(M_LEAP);
-                    s.boing = true;
+                    s.dash = s.move_dir;
                 } else {
                     s.tilt_leap = false;
                     to_passive();
@@ -632,6 +633,13 @@ bool cat_take_swipe(void)
 {
     const bool v = s.swipe;
     s.swipe = false;
+    return v;
+}
+
+int cat_take_dash(void)
+{
+    const int v = s.dash;
+    s.dash = 0;
     return v;
 }
 
