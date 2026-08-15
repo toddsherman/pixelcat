@@ -123,9 +123,10 @@ static uint8_t char_color(char ch)
     }
 }
 
-// The menu renders on its own finer-grained canvas (6 px cells instead of
-// 8), centred and inset so the panel's rounded corners cut nothing off.
-#define MENU_SCALE 6
+// The menus render on their own much finer canvas — 2 px cells against the
+// world's 8 — because this is a 322 ppi panel and menu text has no reason
+// to be built from the same chunky blocks as the cat.
+#define MENU_SCALE 2
 #define MENU_W (VIEW_W / MENU_SCALE)
 #define MENU_H (VIEW_H / MENU_SCALE)
 static uint8_t s_menu[MENU_W * MENU_H];
@@ -1590,6 +1591,11 @@ void cat_debug_force(int mode)
         drop_ball();
     } else if (mode == 53) {
         s.status_screen = true;
+    } else if (mode == 54) {
+        s.test_menu = true;
+        s.test_sel = 2;
+        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
+        snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
     } else if (mode == 60) {
         begin_absent();
     } else if (mode == 61) {
@@ -1617,6 +1623,30 @@ void cat_debug_force(int mode)
 
 // An icon as a vertical gauge: the art exists in quiet grey, and the bottom
 // rows light up in their true colours as the value rises.
+// Same gauge at an arbitrary zoom: the menus are four times finer than the
+// world, so their icons have to grow to match.
+static void stamp_gauge_scaled(int x0, int y0, const char *const *rows,
+                               int nrows, int value, int zoom)
+{
+    const int lit = ((value < 0 ? 0 : value > 100 ? 100 : value) * nrows +
+                     50) / 100;
+    for (int y = 0; y < nrows; y++) {
+        const char *row = rows[y];
+        const bool on = (nrows - 1 - y) < lit;
+        for (int x = 0; row[x]; x++) {
+            if (row[x] == '.') {
+                continue;
+            }
+            const uint8_t c = on ? char_color(row[x]) : C_UI_DIM;
+            for (int dy = 0; dy < zoom; dy++) {
+                for (int dx = 0; dx < zoom; dx++) {
+                    px(x0 + x * zoom + dx, y0 + y * zoom + dy, c);
+                }
+            }
+        }
+    }
+}
+
 static void stamp_gauge(int x0, int y0, const char *const *rows, int nrows,
                         int value)
 {
@@ -1817,6 +1847,92 @@ static int draw_number(int x, int y, int v, uint8_t col)  // returns next x
     return x;
 }
 
+
+// ---------------------------------------------------------------------------
+// A 5x7 font for the menus. The game's 3x5 blocks suit the cat; text wants
+// actual letterforms. Rows top to bottom, bit 4 is the leftmost pixel.
+// ---------------------------------------------------------------------------
+
+static const uint8_t k_small[][7] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},  // space
+    {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E},  // 0
+    {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},  // 1
+    {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F},  // 2
+    {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E},  // 3
+    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02},  // 4
+    {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},  // 5
+    {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E},  // 6
+    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},  // 7
+    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E},  // 8
+    {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},  // 9
+    {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11},  // A
+    {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},  // B
+    {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E},  // C
+    {0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C},  // D
+    {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F},  // E
+    {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10},  // F
+    {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F},  // G
+    {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11},  // H
+    {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E},  // I
+    {0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C},  // J
+    {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11},  // K
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F},  // L
+    {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11},  // M
+    {0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11},  // N
+    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},  // O
+    {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10},  // P
+    {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D},  // Q
+    {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11},  // R
+    {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E},  // S
+    {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04},  // T
+    {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},  // U
+    {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04},  // V
+    {0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11},  // W
+    {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11},  // X
+    {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04},  // Y
+    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F},  // Z
+    {0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03},  // %
+    {0x00, 0x00, 0x01, 0x02, 0x14, 0x08, 0x00},  // ' (checkmark)
+    {0x08, 0x0C, 0x0E, 0x0F, 0x0E, 0x0C, 0x08},  // > (cursor)
+    {0x00, 0x00, 0x04, 0x00, 0x04, 0x00, 0x00},  // :
+    {0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00},  // -
+    {0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10},  // /
+};
+
+#define SMALL_W 5
+#define SMALL_H 7
+#define SMALL_ADV 6   // one column of air between letters
+#define SMALL_LINE 11 // and four rows between lines
+
+static void small_glyph(int gx, int gy, int glyph, uint8_t col)
+{
+    for (int y = 0; y < SMALL_H; y++) {
+        const uint8_t bits = k_small[glyph][y];
+        for (int x = 0; x < SMALL_W; x++) {
+            if (bits & (0x10 >> x)) {
+                px(gx + x, gy + y, col);
+            }
+        }
+    }
+}
+
+// Returns the x just past the text.
+static int small_text(int x, int y, const char *str, uint8_t col)
+{
+    for (; *str; str++) {
+        small_glyph(x, y, glyph_of(*str), col);
+        x += SMALL_ADV;
+    }
+    return x;
+}
+
+static int small_number(int x, int y, int v, uint8_t col)
+{
+    char b[12];
+    snprintf(b, sizeof(b), "%d", v);
+    return small_text(x, y, b, col);
+}
+
 // The menu (tap the heart, dumbbell or Z): each gauge beside its word, a
 // check or cross for "done today", and the streak — which counts today the
 // moment its gauge reaches full. The battery sits in the list like any
@@ -1842,39 +1958,32 @@ static void compose_status(void)
         {ICON_SLEEP, "SLEEP", s.st_s, s.streaks[4], s.hits[4]},
     };
 
+    // Icon, word, today's mark, streak — six rows with room to breathe.
     for (int i = 0; i < 5; i++) {
-        const int by = 3 + i * 9;
-        stamp_gauge(10, by, rows[i].art, 6, rows[i].val);
-        draw_text(23, by + 1, rows[i].word, C_WHITE);
-        // Done today?
-        draw_glyph(55, by + 1, rows[i].hit ? GL_CHK : glyph_of('X'),
-                   rows[i].hit ? C_BATT_G : C_UI_DIM);
-        // The streak counts today as soon as today is done.
+        const int by = 10 + i * 28;
+        stamp_gauge_scaled(14, by, rows[i].art, 6, rows[i].val, 3);
+        small_text(56, by + 5, rows[i].word, C_WHITE);
+        small_glyph(150, by + 5,
+                    rows[i].hit ? glyph_of(0x27) : glyph_of('X'),
+                    rows[i].hit ? C_BATT_G : C_UI_DIM);
         int v = rows[i].streak + (rows[i].hit ? 1 : 0);
         if (v > 99) {
             v = 99;
         }
         const uint8_t col = rows[i].hit ? C_WHITE : C_UI_DIM;
-        const int digits = (v >= 10) ? 2 : 1;
-        const int nx = draw_number(68 - digits * 4, by + 1, v, col);
-        draw_glyph(nx, by + 1, glyph_of('X'), col);
+        const int nx = small_number(174, by + 5, v, col);
+        small_glyph(nx, by + 5, glyph_of('X'), col);
     }
 
-    // Battery, one of the icons now: a gauge of charge plus its number.
-    const int by = 3 + 5 * 9;
-    stamp_gauge(10, by, ICON_BATT, 6, (s.batt_pct >= 0) ? s.batt_pct : 0);
-    draw_text(23, by + 1, "BATT", C_WHITE);
+    const int by = 10 + 5 * 28;
+    stamp_gauge_scaled(14, by, ICON_BATT, 6,
+                       (s.batt_pct >= 0) ? s.batt_pct : 0, 3);
+    small_text(56, by + 5, "BATTERY", C_WHITE);
     if (s.batt_pct >= 0) {
-        const int nx = draw_number(55, by + 1, s.batt_pct, C_WHITE);
-        draw_glyph(nx, by + 1, GL_PCT, C_WHITE);
+        const int nx = small_number(150, by + 5, s.batt_pct, C_WHITE);
+        small_glyph(nx, by + 5, glyph_of('%'), C_WHITE);
     }
 }
-
-// ---------------------------------------------------------------------------
-// The test menu: hold PWR to open, PWR to move, BOOT to choose. Everything
-// here was painful to reach otherwise — forcing a daypart meant waiting for
-// dusk, testing an audition meant a rebuild.
-// ---------------------------------------------------------------------------
 
 static const char *const k_test_items[TEST_COUNT] = {
     "DAYPART", "WEATHER", "ANIMATIONS", "FILL ALL", "EMPTY ALL",
@@ -1884,7 +1993,7 @@ static const char *const k_test_items[TEST_COUNT] = {
 
 // Short enough to sit in the value column without running off the edge.
 static const char *const k_daypart_names[BG_VARIANTS] = {
-    "DAY", "DAWN", "DUSK", "TWI", "NIGHT",
+    "DAY", "DAWN", "DUSK", "TWILIGHT", "NIGHT",
 };
 
 static void compose_test(void)
@@ -1894,32 +2003,27 @@ static void compose_test(void)
     s_surf_h = MENU_H;
     memset(s_menu, C_BLACK, sizeof(s_menu));
 
-    // The canvas is MENU_H rows and every glyph is 5 tall: header on row 0,
-    // ten items five apart ending at 55, one footer line at 56..60. Nothing
-    // overlaps and nothing falls off the bottom.
-    draw_text(2, 0, "TEST MENU", C_BATT_Y);
-    draw_text(48, 0, s.dbg_line2, C_UI_DIM);
+    small_text(8, 6, "TEST MENU", C_BATT_Y);
+    small_text(MENU_W - 90, 6, s.dbg_line2, C_UI_DIM);
+    for (int x = 8; x < MENU_W - 8; x++) {
+        px(x, 18, C_UI_DIM);
+    }
 
     for (int i = 0; i < TEST_COUNT; i++) {
-        const int y = 6 + i * 5;
+        const int y = 26 + i * 14;
         const bool on = (i == s.test_sel);
         if (on) {
-            draw_glyph(2, y, GL_CURSOR, C_BATT_G);
+            small_glyph(8, y, glyph_of('>'), C_BATT_G);
         }
-        draw_text(6, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
+        small_text(18, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
     }
 
-    // What the three art rows would do, in a column clear of the labels.
-    draw_text(50, 6, k_daypart_names[s.daypart], C_BATT_Y);
-    draw_text(50, 11, "-", C_UI_DIM);
-    {
-        char n[12];
-        snprintf(n, sizeof(n), "%d/%d", (s.anim_sel + 1) % 100,
-                 ANIM_COUNT % 100);
-        draw_text(50, 16, n, C_BATT_Y);
-    }
+    // What the three art rows are pointing at.
+    small_text(110, 26, k_daypart_names[s.daypart], C_BATT_Y);
+    small_text(110, 40, "NOT BUILT", C_UI_DIM);
+    small_text(110, 54, k_anims[s.anim_sel].name, C_BATT_Y);
 
-    draw_text(2, MENU_H - 5, s.dbg_line1, C_UI_DIM);
+    small_text(8, MENU_H - 12, s.dbg_line1, C_UI_DIM);
 }
 
 // Browsing animations: the menu steps aside so the cycle can be watched in
