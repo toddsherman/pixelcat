@@ -18,6 +18,7 @@
 #include "cat_bg.h"
 #include "display.h"
 #include "model.h"  // ENTICE_* constants only; model.h is pure C
+#include "stats.h"  // STATS_GAUGE_ROWS: the gauges and the art agree
 
 // ---------------------------------------------------------------------------
 // Palette
@@ -148,11 +149,12 @@ static const char *const HEART[] = {
     "..r..",
 };
 
+// His sleeping Zs, in the same purple as the sleep gauge they fill.
 static const char *const ZED[] = {
-    "zzz",
-    "..z",
-    ".z.",
-    "zzz",
+    "uuu",
+    "..u",
+    ".u.",
+    "uuu",
 };
 
 // World objects: the food bowl (salmon inside) and the yarn ball.
@@ -180,9 +182,9 @@ static const char *const ICON_BALL[] = {
     ".rrrr....",
     "rrrrrW...",
     "rrrrWr...",
-    "rrrWrrrrr",  // the loose thread trails off to the right
+    "rrrWrr...",
     "rrWrrr...",
-    ".rrrr....",
+    ".rrrr.rrr",  // the loose thread trails off the bottom edge
 };
 
 // The fish is vivid blue (C_SLEEP was a near-match for the sky).
@@ -372,7 +374,8 @@ static struct {
     float notice;        // reaction delay before he heads for a new drop
     int goal_kind;       // 0 none, 1 bowl, 2 ball
     float goal_stop;     // world x he trots toward
-    bool eat_evt, play_evt;
+    bool eat_evt, play_evt, bite_evt;
+    int bites_taken;     // mouthfuls this meal, one gauge row each
     int st_f, st_a, st_x, st_p, st_s;  // gauge values pushed in by main
     int streaks[5];                    // play, food, love, exercise, sleep
     int hits[5];                       // gauge reached full today
@@ -574,6 +577,7 @@ static void goal_arrive(void)
 {
     const int kind = s.goal_kind;
     s.goal_kind = 0;
+    s.bites_taken = 0;
     if (kind == 3) {
         // Food-seeking: he stands where dinner usually appears and waits,
         // pointedly.
@@ -1083,6 +1087,13 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 to_passive();
                 break;
             }
+            // A meal arrives a mouthful at a time, so the fish gauge climbs
+            // one row per bite rather than jumping full at the last frame.
+            if (s.bites_taken < STATS_GAUGE_ROWS &&
+                s.t >= (float)(s.bites_taken + 1) * (6.0f / STATS_GAUGE_ROWS)) {
+                s.bites_taken++;
+                s.bite_evt = true;
+            }
             if (s.t > 6.5f) {
                 // Bowl finished: the refill fires through main, and like any
                 // self-respecting cat he washes his paw after dinner — the
@@ -1206,6 +1217,11 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         s.ball_x = wrapf(s.ball_x + s.ball_vx * dt);
         s.ball_vx -= s.ball_vx * 3.0f * dt;
         s.play_left -= dt;
+        // A full play gauge ends the game: he has had his fill, and the
+        // ball goes away with him.
+        if (s.st_p >= 100) {
+            s.play_left = 0.0f;
+        }
         if (s.play_left <= 0.0f) {
             s.ball_alive = false;
             s.play_left = 0.0f;
@@ -1390,6 +1406,13 @@ bool cat_take_eat(void)
 {
     const bool v = s.eat_evt;
     s.eat_evt = false;
+    return v;
+}
+
+bool cat_take_bite(void)
+{
+    const bool v = s.bite_evt;
+    s.bite_evt = false;
     return v;
 }
 
@@ -1790,7 +1813,9 @@ void cat_render(void)
         compose();
     }
 
-    const uint16_t (*world)[BG_STRIP_H] = cat_bg[s.daypart];
+    // Whichever variant is resident — baked in flash, or streamed from the
+    // card into PSRAM. NULL only if the park has not landed yet.
+    const uint16_t (*world)[BG_STRIP_H] = cat_bg_strips(s.daypart);
     // The camera sets the scroll: pinned to him normally, free while he is
     // absent or hiding (the swipe search pans it).
     const int scroll = (int)s.cam_x - (int)(CENTRE * PIX_SCALE);
@@ -1820,7 +1845,11 @@ void cat_render(void)
 
             // Each panel row is one pre-rotated world-column strip.
             const int wx = ((scroll + y0 + row) % BG_WORLD_W + BG_WORLD_W) % BG_WORLD_W;
-            memcpy(out, world[wx], LCD_H_RES * sizeof(uint16_t));
+            if (world) {
+                memcpy(out, world[wx], LCD_H_RES * sizeof(uint16_t));
+            } else {
+                memset(out, 0, LCD_H_RES * sizeof(uint16_t));
+            }
 
             // Rotated overlay: a panel row is a logical column. The panel row
             // fixes the logical x cell; walking panel columns descends the

@@ -134,6 +134,24 @@
 // Which of the three candidate meow voices he uses (picked by ear).
 #define MEOW_VARIANT 0
 
+// ---------------------------------------------------------------------------
+// Where the park comes from
+// ---------------------------------------------------------------------------
+
+// 1 = stream the world from the SD card into PSRAM. This frees ~8.7 MB of
+// flash (the baked arrays were 90% of the firmware image) and lifts the cap
+// on how many scene variants can exist — weather needs far more than the
+// partition can hold. 0 = compile the park into the binary, as before.
+// Host tools always take the baked path.
+// (CMakeLists.txt greps this line to decide whether to compile cat_bg.c —
+// keep it a plain "#define WORLD_FROM_SD <0|1>".)
+#define WORLD_FROM_SD 1
+
+#ifndef ESP_PLATFORM
+#undef WORLD_FROM_SD
+#define WORLD_FROM_SD 0
+#endif
+
 // Debug hook: >0 force-fires a proactive audition this many seconds after
 // boot, so the whole wake->meow->entice->hit/miss path can be verified by
 // telemetry without waiting weeks for the model. Ship with 0.

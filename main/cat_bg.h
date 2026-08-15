@@ -11,4 +11,14 @@
 #define BG_TWILIGHT 3
 #define BG_NIGHT 4
 
+// The park comes either from the SD card (streamed into PSRAM) or
+// from these baked arrays; cat_bg_strips() hides which.
+#if WORLD_FROM_SD
+const uint16_t (*cat_bg_strips(int variant))[368];
+#else
 extern const uint16_t cat_bg[5][2496][368];
+static inline const uint16_t (*cat_bg_strips(int variant))[368]
+{
+    return cat_bg[variant];
+}
+#endif

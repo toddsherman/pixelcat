@@ -21,10 +21,13 @@
 #include "freertos/task.h"
 #include "cat_bg.h"
 #include "imu.h"
+#include "logbook.h"
 #include "model.h"
 #include "nvs_flash.h"
 #include "rtc.h"
+#include "sdcard.h"
 #include "stats.h"
+#include "world.h"
 #include "wifi_time.h"
 #include "sun_table.h"
 #include "touch.h"
@@ -220,11 +223,13 @@ static void cat_task(void *arg)
                 now - s_last_act_us > 15LL * 60 * 1000000) {
                 struct tm lt;
                 if (wall_clock(&lt)) {
+                    const int bucket =
+                        model_bucket(lt.tm_wday, lt.tm_hour * 60 + lt.tm_min);
                     model_note_session(
-                        model_bucket(lt.tm_wday,
-                                     lt.tm_hour * 60 + lt.tm_min),
-                        (lt.tm_year + 1900) * 10000 + (lt.tm_mon + 1) * 100 +
-                            lt.tm_mday);
+                        bucket, (lt.tm_year + 1900) * 10000 +
+                                    (lt.tm_mon + 1) * 100 + lt.tm_mday);
+                    logbook_add(LOG_SESSION, bucket,
+                                s_audition_until_us ? 1 : 0);
                 }
             }
             s_last_act_us = now;
@@ -250,6 +255,7 @@ static void cat_task(void *arg)
                 model_audition_result(s_audition_period, s_audition_arm,
                                       true);
                 model_store_save();
+                logbook_add(LOG_AUDITION, s_audition_arm, 1);
                 cat_entice_stop();
                 s_audition_until_us = 0;
                 ESP_LOGI("model", "audition hit");
@@ -257,6 +263,7 @@ static void cat_task(void *arg)
                 model_audition_result(s_audition_period, s_audition_arm,
                                       false);
                 model_store_save();
+                logbook_add(LOG_AUDITION, s_audition_arm, 0);
                 cat_entice_stop();
                 s_audition_until_us = 0;
                 ESP_LOGI("model", "audition miss; straight back to sleep");
@@ -298,6 +305,7 @@ static void cat_task(void *arg)
         if (cat_take_reconcile()) {
             stats_on_reconcile();
             stats_store_save();
+            logbook_add(LOG_RECONCILE, 0, 0);
         }
 
         audio_set_purr(cat_purr_level());
@@ -308,6 +316,7 @@ static void cat_task(void *arg)
             audio_hiss();
             stats_on_scare(cat_scare_level());
             stats_store_save();
+            logbook_add(LOG_SCARE, cat_scare_level(), 0);
         }
         // The heart emptying, one row and one falling tone at a time.
         {
@@ -337,9 +346,13 @@ static void cat_task(void *arg)
                 stats_on_dash();
             }
         }
+        if (cat_take_bite()) {
+            // One mouthful, one gauge row: a bowl is a full meal, eaten.
+            stats_on_eat(100.0f / STATS_GAUGE_ROWS);
+        }
         if (cat_take_eat()) {
-            stats_on_eat(100.0f);  // a bowl is a full meal
             stats_store_save();
+            logbook_add(LOG_FEED, 0, 0);
         }
         if (cat_take_play_hit()) {
             stats_on_play_hit();
@@ -348,6 +361,8 @@ static void cat_task(void *arg)
         if (stats_catchup_done() && now - last_save_us > 300 * 1000000LL) {
             last_save_us = now;
             stats_store_save();
+            logbook_flush();
+            logbook_mark_uptime();
         }
 
         // Gauges refresh every frame so each pixel row lights the moment
@@ -458,6 +473,11 @@ void app_main(void)
     warmup_frame();
     vTaskDelay(pdMS_TO_TICKS(250));
 
+    // The card carries the park and keeps the logbook; without one the game
+    // runs on a plain procedural sky and remembers nothing.
+    sdcard_mount(s_i2c_bus);
+    logbook_init();
+
     if (touch_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no touch: the cat cannot be petted");
     }
@@ -493,6 +513,20 @@ void app_main(void)
         ESP_LOGI(TAG, "proactive wake boot: arm %d", s_pending_arm);
     } else {
         s_pending_arm = -1;
+    }
+    logbook_note_boot();
+
+    // Load the park for whatever hour it is. The clock may still be at the
+    // epoch this early; daylight is the safe opening guess and the loader
+    // swaps in the right one within seconds of the first battery poll.
+    {
+        int yy, mm, dd, want = BG_DAY;
+        if (pcf_date(&yy, &mm, &dd)) {
+            want = daypart_for(yy, mm, dd, pcf_minutes_of_day());
+        }
+        if (world_init(want) != ESP_OK) {
+            ESP_LOGW(TAG, "no park: the sky will be plain");
+        }
     }
 
     wifi_time_start();

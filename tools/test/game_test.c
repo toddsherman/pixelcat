@@ -84,6 +84,7 @@ static void drain_events(void)
     cat_take_slurp();
     cat_take_swipe();
     cat_take_dash();
+    cat_take_bite();
     cat_take_eat();
     cat_take_play_hit();
     cat_take_walked();
@@ -134,9 +135,10 @@ int main(void)
     fresh_present_cat();
     cat_set_stats(35, 62, 20, 0, 50);
     tap(CELL(13), CELL(4));  // fish icon zone
-    int ate = 0, slurps = 0, post_slurps = 0;
+    int ate = 0, slurps = 0, post_slurps = 0, bites = 0;
     for (int i = 0; i < (int)(14.0f / DT); i++) {
         idle_frames(1);
+        bites += cat_take_bite() ? 1 : 0;
         if (cat_take_eat()) {
             ate++;
             // A real cat washes up after dinner: grooming slurps follow.
@@ -151,6 +153,7 @@ int main(void)
     expect(ate == 1, "fish tap feeds him within 14 s");
     expect(slurps >= 3, "eating slurps");
     expect(post_slurps >= 1, "he washes up after dinner");
+    expect(bites == STATS_GAUGE_ROWS, "the meal arrives one gauge row at a time");
 
     // --- Play: ball icon tap starts a session with bats or pounces ---
     fresh_present_cat();
@@ -163,6 +166,22 @@ int main(void)
     }
     expect(hits >= 2, "play session scores hits");
     expect(cat_state() == CAT_IDLE, "session over, back to idle");
+
+    // --- A full play gauge ends the game and takes the ball away ---
+    fresh_present_cat();
+    cat_set_stats(80, 62, 20, 0, 50);
+    tap(CELL(4), CELL(4));
+    int stopped = 0;
+    for (int i = 0; i < (int)(30.0f / DT) && !stopped; i++) {
+        idle_frames(1);
+        cat_take_play_hit();
+        // Simulate the gauge filling as main would push it.
+        cat_set_stats(80, 62, 20, (i > (int)(6.0f / DT)) ? 100 : 40, 50);
+        if (i > (int)(6.0f / DT) + 4 && cat_state() == CAT_IDLE) {
+            stopped = 1;
+        }
+    }
+    expect(stopped, "a full play gauge ends the session");
 
     // --- Full gauges gate their taps: no dinner for a fed cat ---
     fresh_present_cat();

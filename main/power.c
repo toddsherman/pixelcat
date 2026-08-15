@@ -7,6 +7,7 @@
 #include "button.h"
 #include "config.h"
 #include "display.h"
+#include "logbook.h"
 #include "model.h"
 #include "stats.h"
 #include "driver/gpio.h"
@@ -110,6 +111,7 @@ void power_idle_check(void)
     // boot-time offline catch-up then covers however long the nap lasts.
     stats_apply_offline();
     stats_store_save();
+    logbook_flush();  // the card sleeps too; get the day's events down first
     audio_stop();
     display_power_off();
 

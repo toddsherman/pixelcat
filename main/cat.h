@@ -69,7 +69,8 @@ void cat_set_stats(int food, int affection, int exercise, int play,
 void cat_set_streaks(const int streaks[5], const int hits[5]);
 
 // One-shot events out of the engine:
-bool cat_take_eat(void);        // he finished a bowl -> refill hunger
+bool cat_take_bite(void);       // one mouthful -> one row of the fish gauge
+bool cat_take_eat(void);        // the bowl is finished
 bool cat_take_play_hit(void);   // one paw-bat or pounce landed
 bool cat_take_summon(void);     // a sound or tap called him in from absent
 bool cat_take_reconcile(void);  // an earned purr made peace after a scare

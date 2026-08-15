@@ -581,6 +581,7 @@ void cat_set_streaks(const int streaks[5], const int hits[5])
 {
     (void)streaks; (void)hits;
 }
+bool cat_take_bite(void) { return false; }
 bool cat_take_eat(void) { return false; }
 bool cat_take_play_hit(void) { return false; }
 bool cat_take_summon(void) { return false; }
