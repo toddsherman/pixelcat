@@ -65,11 +65,12 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus)
 
 float imu_tilt_x(void)
 {
-    // Landscape (device rotated 90 CCW): the viewer's horizontal axis is the
-    // portrait screen's vertical, which the IMU reports on x. Portrait screen-
-    // down reads +x and is now the viewer's right, and gravity is the negated
-    // reaction, so viewer-right tilt = -lp[0].
-    return s_ready ? -s_lp[0] : 0.0f;
+    // Landscape (device rotated 90 CCW, USB to the viewer's right). Calibrated
+    // against a recorded right-side-down hold on 2026-08-14: IMU +x points
+    // toward the portrait TOP edge (the old dock-based inference was
+    // inverted), so viewer-right-down produces a POSITIVE x reaction and
+    // tilt = +lp[0].
+    return s_ready ? s_lp[0] : 0.0f;
 }
 
 void imu_gravity(float out[3])
