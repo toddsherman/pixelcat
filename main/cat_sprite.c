@@ -1706,8 +1706,10 @@ static void compose(void)
     }
 
     if (s.anim_browse) {
-        // Its name, and how to get out, along the bottom.
-        draw_text(2, CANVAS_H - 6, k_anims[s.anim_sel].name, C_WHITE);
+        // Its name, and the way out, along the bottom.
+        const int x = draw_text(2, CANVAS_H - 6, k_anims[s.anim_sel].name,
+                                C_WHITE);
+        draw_text(x + 4, CANVAS_H - 6, "BOOT BACK", C_UI_DIM);
         return;
     }
 
@@ -1987,7 +1989,8 @@ static void compose_status(void)
 
 static const char *const k_test_items[TEST_COUNT] = {
     "DAYPART", "WEATHER", "ANIMATIONS", "FILL ALL", "EMPTY ALL",
-    "SCARE HIM", "SUMMON", "AUDITION", "SLEEP NOW", "EXIT",
+    "SCARE HIM", "SUMMON", "AUDITION", "SLEEP NOW",
+    "EXIT MENU", "EXIT TEST",
 };
 
 
@@ -2004,13 +2007,18 @@ static void compose_test(void)
     memset(s_menu, C_BLACK, sizeof(s_menu));
 
     small_text(8, 6, "TEST MENU", C_BATT_Y);
+    if (s.daypart_forced) {
+        small_text(66, 6, "FORCED", C_BATT_R);
+    }
     small_text(MENU_W - 90, 6, s.dbg_line2, C_UI_DIM);
     for (int x = 8; x < MENU_W - 8; x++) {
         px(x, 18, C_UI_DIM);
     }
 
+    // Eleven items, 13 rows apart from y=24: the last ends at 161, clear of
+    // the footer at 172.
     for (int i = 0; i < TEST_COUNT; i++) {
-        const int y = 26 + i * 14;
+        const int y = 24 + i * 13;
         const bool on = (i == s.test_sel);
         if (on) {
             small_glyph(8, y, glyph_of('>'), C_BATT_G);
@@ -2019,11 +2027,13 @@ static void compose_test(void)
     }
 
     // What the three art rows are pointing at.
-    small_text(110, 26, k_daypart_names[s.daypart], C_BATT_Y);
-    small_text(110, 40, "NOT BUILT", C_UI_DIM);
-    small_text(110, 54, k_anims[s.anim_sel].name, C_BATT_Y);
+    small_text(110, 24, k_daypart_names[s.daypart],
+               s.daypart_forced ? C_BATT_Y : C_UI_DIM);
+    small_text(110, 37, "NOT BUILT", C_UI_DIM);
+    small_text(110, 50, k_anims[s.anim_sel].name, C_BATT_Y);
 
     small_text(8, MENU_H - 12, s.dbg_line1, C_UI_DIM);
+    small_text(MENU_W - 110, MENU_H - 12, "PWR MOVE BOOT PICK", C_UI_DIM);
 }
 
 // Browsing animations: the menu steps aside so the cycle can be watched in
@@ -2113,8 +2123,17 @@ int cat_button_boot(void)
                 begin_absent();
             }
             break;
-        case TEST_EXIT:
+        case TEST_EXIT_MENU:
+            // Out of the way, but a forced daypart keeps standing — that is
+            // the point of forcing one.
             s.test_menu = false;
+            break;
+        case TEST_EXIT_TEST:
+            // Everything back to the world's own rules.
+            s.test_menu = false;
+            s.anim_browse = false;
+            s.daypart_forced = false;
+            to_passive();
             break;
         default:
             break;  // FILL/EMPTY/AUDITION/SLEEP are main's to carry out

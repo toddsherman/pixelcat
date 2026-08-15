@@ -62,6 +62,11 @@ is the HUD. No navigation state, no open/close.
     on screen: PWR steps to the next, BOOT goes back to the menu.
   - Plus the gameplay testers: fill or empty every gauge, scare him, summon
     or banish him, force a proactive audition, sleep now.
+  - Two ways out, because they mean different things: **EXIT MENU** puts
+    the menu away and leaves anything forced still forced (the point of
+    forcing a daypart is to walk around in it), while **EXIT TEST** hands
+    everything back to the world's own rules. A red FORCED flag in the
+    header says when the second one has something to undo.
 
 ## The microphone, absence, and hiding
 
