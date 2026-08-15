@@ -12,6 +12,12 @@ void power_note_activity(void);
 // Call every loop tick; does not return if the device goes to sleep.
 void power_idle_check(void);
 
+// Arm a rehearsal: sleep now (even on USB, which normally forbids it) and
+// stage a proactive wake this many seconds later, so the whole screen-off,
+// meow, entice sequence can be watched without waiting weeks for the model
+// to believe in it.
+void power_simulate_wake(int seconds);
+
 // Expire the idle timer immediately (the next idle check sleeps, battery
 // permitting) — used when a proactive audition times out.
 void power_sleep_now(void);

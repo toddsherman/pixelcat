@@ -102,6 +102,8 @@ int cat_flush_errors(void);
 // as an action for main.
 enum {
     ACT_NONE = -1,
+    ACT_DEFAULTS = 10,  // everything back to the clock; hold the screen
+    ACT_SIM_WAKE,       // sleep, then rehearse a proactive wake
     ACT_AUDITION = 0,  // fire a proactive audition now
     ACT_SLEEP,         // drop into light sleep
     ACT_FORGET,        // erase everything the model has learned
@@ -115,6 +117,11 @@ void cat_test_close(void);
 
 // 0..100 while the icon browser is up, else -1.
 int cat_icon_fill(void);
+
+// While settling, the screen stays dark: leaving test mode should not
+// flash a forced daypart for the fraction of a second its replacement
+// takes to load.
+void cat_set_settling(bool on);
 
 // Two short lines of whatever is worth knowing, shown under the test menu.
 void cat_set_debug_lines(const char *a, const char *b);

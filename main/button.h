@@ -13,8 +13,14 @@
 
 esp_err_t button_init(i2c_master_bus_handle_t bus);
 
-// Call periodically. Returns true exactly once per completed short press.
+// Call periodically. Returns true exactly once per completed tap (under
+// 400 ms) — the test bench uses it to move.
 bool button_take_short_press(void);
+
+// And once per deliberate hold (400-1500 ms), which the bench uses to pick.
+// This exists because the BOOT button is small, awkward, and on at least
+// one unit unreliable enough to have latched the chip into download mode.
+bool button_take_long_press(void);
 
 // Instantaneous PWR level, for the sleep poll.
 bool button_pressed_raw(void);

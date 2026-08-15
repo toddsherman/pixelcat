@@ -179,6 +179,11 @@ esp_err_t world_init(int variant)
     return ESP_OK;
 }
 
+bool world_is_resident(int variant)
+{
+    return s_variant[s_active] == variant;
+}
+
 void world_request(int variant)
 {
     if (variant < 0 || variant >= BG_VARIANTS || variant == s_want) {

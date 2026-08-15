@@ -13,7 +13,10 @@
 #define PWR_BIT (1 << 4)  // EXIO4, reads high while the button is held
 
 #define DEBOUNCE_SAMPLES 2
-#define SHORT_PRESS_MAX_MS 1500
+// A tap moves, a hold picks. Anything longer is on its way to the six-second
+// hardware power-off and is none of our business.
+#define TAP_MAX_MS 400
+#define HOLD_MAX_MS 1500
 
 static const char *TAG = "button";
 
@@ -22,6 +25,7 @@ static bool s_stable_state;
 static int s_agree_count;
 static int64_t s_press_started_us;
 static bool s_pending_short_press;
+static bool s_pending_long_press;
 static uint8_t s_last_raw = 0xFF;
 
 static esp_err_t read_reg(uint8_t reg, uint8_t *value)
@@ -73,6 +77,13 @@ esp_err_t button_init(i2c_master_bus_handle_t bus)
     return ESP_OK;
 }
 
+bool button_take_long_press(void)
+{
+    const bool v = s_pending_long_press;
+    s_pending_long_press = false;
+    return v;
+}
+
 bool button_pressed_raw(void)
 {
     uint8_t input;
@@ -109,8 +120,10 @@ bool button_take_short_press(void)
         } else {
             // A long hold is the hardware power-off gesture; ignore it here.
             const int64_t held_ms = (esp_timer_get_time() - s_press_started_us) / 1000;
-            if (held_ms <= SHORT_PRESS_MAX_MS) {
+            if (held_ms < TAP_MAX_MS) {
                 s_pending_short_press = true;
+            } else if (held_ms <= HOLD_MAX_MS) {
+                s_pending_long_press = true;
             }
         }
     }

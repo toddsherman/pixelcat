@@ -12,6 +12,9 @@
 #if WORLD_FROM_SD
 esp_err_t world_init(int variant);
 void world_request(int variant);
+
+// True once this variant is the one actually in front of the renderer.
+bool world_is_resident(int variant);
 #else
 static inline esp_err_t world_init(int variant)
 {
@@ -19,4 +22,9 @@ static inline esp_err_t world_init(int variant)
     return ESP_OK;
 }
 static inline void world_request(int variant) { (void)variant; }
+static inline bool world_is_resident(int variant)
+{
+    (void)variant;
+    return true;
+}
 #endif

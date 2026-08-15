@@ -127,6 +127,11 @@ static uint8_t char_color(char ch)
 // world's 8 — because this is a 322 ppi panel and menu text has no reason
 // to be built from the same chunky blocks as the cat.
 #define MENU_SCALE 2
+
+// The panel is a rounded rectangle, so its corners eat anything drawn to
+// the literal edge. Keep the menus inside this margin.
+#define MENU_INSET_X 16
+#define MENU_INSET_Y 16
 #define MENU_W (VIEW_W / MENU_SCALE)
 #define MENU_H (VIEW_H / MENU_SCALE)
 static uint8_t s_menu[MENU_W * MENU_H];
@@ -420,6 +425,7 @@ static struct {
     int icon_fill;                     // 0..100 while browsing icons, else -1
     int daypart_pick;                  // 0 = leave it to the clock
     int confirm_sel;                   // item waiting on a second press
+    bool settling;                     // hold the screen dark until ready
     int mi_sessions, mi_days, mi_thresh, mi_hits, mi_misses, mi_peak;
     bool mi_mature;
     char mi_best[12];
@@ -1650,21 +1656,21 @@ void cat_debug_force(int mode)
         enter(M_PORTRAIT);
         s.screen = TS_BEHAV;
         s.test_sel = 0;
-        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
+        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30G UP742S");
         snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
     } else if (mode == 56) {
         s.screen = TS_MODEL;
         s.test_sel = 0;
-        s.confirm_sel = 0;
+        s.confirm_sel = 1;
         s.mi_sessions = 7; s.mi_days = 1; s.mi_mature = false;
         s.mi_thresh = 43; s.mi_hits = 3; s.mi_misses = 1; s.mi_peak = 1350;
         snprintf(s.mi_best, sizeof(s.mi_best), "MEOW");
-        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
+        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30G UP742S");
         snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
     } else if (mode == 54) {
         s.screen = TS_MAIN;
         s.test_sel = 2;
-        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
+        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30G UP742S");
         snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
     } else if (mode == 60) {
         begin_absent();
@@ -1785,11 +1791,11 @@ static void compose(void)
         }
         if (s.screen == TS_ANIM) {
             draw_text(2, 1, k_anims[s.anim_sel].name, C_WHITE);
-            draw_text(2, 7, "BOOT BACK", C_UI_DIM);
+            draw_text(2, 7, "HOLD BACK", C_UI_DIM);
             return;
         }
         draw_text(2, 1, k_behav_items[s.test_sel], C_WHITE);
-        draw_text(2, 7, "BOOT DO", C_UI_DIM);
+        draw_text(2, 7, "HOLD DO", C_UI_DIM);
         return;  // the HUD stays out of the way, as in the other browser
     }
     if (s.screen == TS_ICONS) {
@@ -1801,7 +1807,7 @@ static void compose(void)
             }
         }
         draw_text(2, CANVAS_H - 12, "PWR FILL", C_WHITE);
-        draw_text(2, CANVAS_H - 6, "BOOT BACK", C_UI_DIM);
+        draw_text(2, CANVAS_H - 6, "HOLD BACK", C_UI_DIM);
     }
 
     // HUD: five gauges — yarn ball (play), fish (food), heart (affection),
@@ -2092,8 +2098,10 @@ static const char *const k_main_items[M_ROW_COUNT] = {
 };
 
 
-enum { A_FORGET = 0, A_BACK, A_COUNT };
-static const char *const k_model_items[A_COUNT] = {"FORGET ALL", "BACK"};
+enum { A_SIMWAKE = 0, A_FORGET, A_BACK, A_COUNT };
+static const char *const k_model_items[A_COUNT] = {
+    "SIMULATE WAKING", "FORGET ALL", "BACK",
+};
 
 // Daypart pick 0 means "leave it to the clock".
 static const char *const k_daypart_names[BG_VARIANTS] = {
@@ -2106,18 +2114,20 @@ static const char *const k_daypart_names[BG_VARIANTS] = {
 static void draw_list(const char *const *items, int n, int sel, int confirm,
                       int top)
 {
-    int pitch = ((MENU_H - 16) - top - SMALL_H) / (n > 1 ? n - 1 : 1);
+    const int bottom = MENU_H - MENU_INSET_Y - SMALL_H - 6;
+    int pitch = (bottom - top - SMALL_H) / (n > 1 ? n - 1 : 1);
     if (pitch > 16) {
         pitch = 16;  // short lists should not sprawl down the whole page
     }
     for (int i = 0; i < n; i++) {
         const int y = top + i * pitch;
         if (i == sel) {
-            small_glyph(8, y, glyph_of('>'), C_BATT_G);
+            small_glyph(MENU_INSET_X, y, glyph_of('>'), C_BATT_G);
         }
-        small_text(18, y, items[i], (i == sel) ? C_WHITE : C_UI_DIM);
+        small_text(MENU_INSET_X + 10, y, items[i], (i == sel) ? C_WHITE : C_UI_DIM);
         if (i == confirm) {
-            small_text(120, y, "SURE - PICK AGAIN", C_BATT_R);
+            // Right-aligned so it cannot run off into the corner.
+            small_text(MENU_W - MENU_INSET_X - 66, y, "PICK AGAIN", C_BATT_R);
         }
     }
 }
@@ -2128,16 +2138,19 @@ static void menu_chrome(const char *title)
     s_surf_w = MENU_W;
     s_surf_h = MENU_H;
     memset(s_menu, C_BLACK, sizeof(s_menu));
-    small_text(8, 6, title, C_BATT_Y);
+    small_text(MENU_INSET_X, MENU_INSET_Y, title, C_BATT_Y);
     if (s.daypart_forced) {
-        small_text(MENU_W - 150, 6, "FORCED", C_BATT_R);
+        small_text(MENU_INSET_X + 62, MENU_INSET_Y, "FORCED", C_BATT_R);
     }
-    small_text(MENU_W - 90, 6, s.dbg_line2, C_UI_DIM);
-    for (int x = 8; x < MENU_W - 8; x++) {
-        px(x, 18, C_UI_DIM);
+    small_text(MENU_W - MENU_INSET_X - 36, MENU_INSET_Y, s.dbg_line2,
+               C_UI_DIM);
+    for (int x = MENU_INSET_X; x < MENU_W - MENU_INSET_X; x++) {
+        px(x, MENU_INSET_Y + 11, C_UI_DIM);
     }
-    small_text(8, MENU_H - 12, s.dbg_line1, C_UI_DIM);
-    small_text(MENU_W - 110, MENU_H - 12, "PWR MOVE BOOT PICK", C_UI_DIM);
+    small_text(MENU_INSET_X, MENU_H - MENU_INSET_Y - SMALL_H, s.dbg_line1,
+               C_UI_DIM);
+    small_text(MENU_W - MENU_INSET_X - 108, MENU_H - MENU_INSET_Y - SMALL_H,
+               "TAP MOVE HOLD PICK", C_UI_DIM);
 }
 
 static void compose_test(void)
@@ -2149,8 +2162,8 @@ static void compose_test(void)
             char line[40];
             snprintf(line, sizeof(line), "SESSIONS %d OVER %d DAYS",
                      s.mi_sessions, s.mi_days);
-            small_text(18, 26, line, C_WHITE);
-            small_text(18, 38, s.mi_mature ? "MATURE - HE MAY WAKE YOU"
+            small_text(MENU_INSET_X + 10, MENU_INSET_Y + 18, line, C_WHITE);
+            small_text(MENU_INSET_X + 10, MENU_INSET_Y + 30, s.mi_mature ? "MATURE - HE MAY WAKE YOU"
                                            : "STILL LEARNING - NO WAKES YET",
                        s.mi_mature ? C_BATT_G : C_UI_DIM);
             if (s.mi_peak >= 0) {
@@ -2161,15 +2174,15 @@ static void compose_test(void)
             } else {
                 snprintf(line, sizeof(line), "NO PATTERN YET");
             }
-            small_text(18, 50, line, C_WHITE);
+            small_text(MENU_INSET_X + 10, MENU_INSET_Y + 42, line, C_WHITE);
             snprintf(line, sizeof(line), "WAKES %d HIT %d MISS",
                      s.mi_hits, s.mi_misses);
-            small_text(18, 62, line, C_WHITE);
+            small_text(MENU_INSET_X + 10, MENU_INSET_Y + 54, line, C_WHITE);
             snprintf(line, sizeof(line), "BAR %d%% BEST %s", s.mi_thresh,
                      s.mi_best);
-            small_text(18, 74, line, C_WHITE);
+            small_text(MENU_INSET_X + 10, MENU_INSET_Y + 66, line, C_WHITE);
             // The list sits under what it is talking about.
-            draw_list(k_model_items, A_COUNT, s.test_sel, s.confirm_sel, 96);
+            draw_list(k_model_items, A_COUNT, s.test_sel, s.confirm_sel, 104);
             return;
         }
 
@@ -2183,15 +2196,16 @@ static void compose_test(void)
     }
 
     menu_chrome("TEST MENU");
-    draw_list(k_main_items, M_ROW_COUNT, s.test_sel, -1, 24);
+    draw_list(k_main_items, M_ROW_COUNT, s.test_sel, -1, MENU_INSET_Y + 18);
 
-    const int top = 24;
-    const int pitch = ((MENU_H - 16) - top - SMALL_H) / (M_ROW_COUNT - 1);
-    small_text(120, top, s.daypart_pick ? k_daypart_names[s.daypart_pick - 1]
+    const int top = MENU_INSET_Y + 18;
+    const int bottom = MENU_H - MENU_INSET_Y - SMALL_H - 6;
+    const int pitch = (bottom - top - SMALL_H) / (M_ROW_COUNT - 1);
+    small_text(MENU_INSET_X + 104, top, s.daypart_pick ? k_daypart_names[s.daypart_pick - 1]
                                         : "DEFAULT",
                s.daypart_pick ? C_BATT_Y : C_UI_DIM);
-    small_text(120, top + pitch, "NOT BUILT", C_UI_DIM);
-    small_text(120, top + 2 * pitch, k_anims[s.anim_sel].name, C_BATT_Y);
+    small_text(MENU_INSET_X + 104, top + pitch, "NOT BUILT", C_UI_DIM);
+    small_text(MENU_INSET_X + 104, top + 2 * pitch, k_anims[s.anim_sel].name, C_BATT_Y);
 }
 
 // The noise a cycle opens with, for the ones that have one.
@@ -2331,6 +2345,10 @@ int cat_button_boot(void)
             }
 
         case TS_MODEL:
+            if (s.test_sel == A_SIMWAKE) {
+                cat_test_close();
+                return ACT_SIM_WAKE;
+            }
             if (s.test_sel == A_FORGET) {
                 // Irreversible: ask twice.
                 if (s.confirm_sel != A_FORGET) {
@@ -2382,8 +2400,9 @@ int cat_button_boot(void)
             cat_test_close();
             s.daypart_pick = 0;
             s.daypart_forced = false;
+            s.settling = true;  // dark until the real park is back
             to_passive();
-            break;
+            return ACT_DEFAULTS;
         default:
             break;
     }
@@ -2404,6 +2423,11 @@ void cat_set_model_info(int sessions, int days, bool mature, int thresh_pct,
     snprintf(s.mi_best, sizeof(s.mi_best), "%s", best_act ? best_act : "-");
 }
 
+void cat_set_settling(bool on)
+{
+    s.settling = on;
+}
+
 void cat_set_debug_lines(const char *a, const char *b)
 {
     snprintf(s.dbg_line1, sizeof(s.dbg_line1), "%s", a ? a : "");
@@ -2419,6 +2443,17 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
+    if (s.settling) {
+        // Nothing half-restored on screen: black until it is all true.
+        for (int band = 0; band < BAND_COUNT; band++) {
+            uint16_t *buf = display_acquire_band();
+            memset(buf, 0, LCD_H_RES * BAND_ROWS * sizeof(uint16_t));
+            if (display_flush_band(band, buf) != 0) {
+                s_flush_errors++;
+            }
+        }
+        return;
+    }
     if (TS_IS_PAGE(s.screen)) {
         compose_test();
     } else if (s.status_screen) {

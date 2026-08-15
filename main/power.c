@@ -39,6 +39,14 @@ void power_note_activity(void)
     s_last_activity = esp_timer_get_time();
 }
 
+static int s_sim_secs;
+
+void power_simulate_wake(int seconds)
+{
+    s_sim_secs = seconds;
+    power_sleep_now();
+}
+
 void power_sleep_now(void)
 {
     s_last_activity =
@@ -98,10 +106,11 @@ void power_idle_check(void)
     // sleep pauses the USB serial port, which makes the board hard to flash
     // and debug). Docked means awake — and an unreadable fuel gauge must
     // fail the same way, or one glitched I2C read puts a plugged-in board
-    // to sleep and takes the serial port with it.
+    // to sleep and takes the serial port with it. A rehearsal overrides
+    // this on purpose: it was asked for.
     int pct;
     bool plugged;
-    if (!battery_read(&pct, &plugged) || plugged) {
+    if (s_sim_secs <= 0 && (!battery_read(&pct, &plugged) || plugged)) {
         power_note_activity();
         return;
     }
@@ -128,7 +137,18 @@ void power_idle_check(void)
     // The PWR button lives behind the I2C expander (the AXP2101 IRQ line is
     // not routed on this board), so wake for ~1 ms every 300 ms to poll it.
     int slices = 0;
+    const int64_t slept_at = esp_timer_get_time();
     for (;;) {
+        // A rehearsal: wake on the clock and pretend the model asked.
+        if (s_sim_secs > 0 &&
+            esp_timer_get_time() - slept_at >= (int64_t)s_sim_secs * 1000000) {
+            s_sim_secs = 0;
+            g_proactive_arm = ENTICE_MEOW;
+            g_proactive_period = 0;
+            g_proactive = 1;
+            ESP_LOGI(TAG, "rehearsed wake");
+            break;
+        }
         esp_sleep_enable_timer_wakeup(POLL_US);
         const esp_err_t slept = esp_light_sleep_start();
 
@@ -150,7 +170,7 @@ void power_idle_check(void)
         // Docked means awake, even when the docking happens mid-sleep:
         // every ~6 s of sleep, peek at VBUS so plugging the board in
         // revives it (and its USB serial port) without a button press.
-        if ((slices % 20) == 19) {
+        if ((slices % 20) == 19 && s_sim_secs <= 0) {
             int pct;
             bool plugged;
             if (battery_read(&pct, &plugged) && plugged) {

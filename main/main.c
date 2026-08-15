@@ -205,7 +205,9 @@ static void cat_task(void *arg)
         cat_update(dt, &ct, shake, tilt);
 
         const bool button_press = button_take_short_press();
-        const bool boot_press = boot_take_press();
+        // Either a BOOT press or a deliberate hold of PWR picks, so the
+        // bench is usable even when BOOT is not.
+        const bool boot_press = boot_take_press() || button_take_long_press();
         if (button_press) {
             ESP_LOGI(TAG, "PWR pressed");
         }
@@ -236,6 +238,22 @@ static void cat_task(void *arg)
                     break;
                 case ACT_GAUGES:
                     stats_debug_set((float)cat_icon_fill());
+                    break;
+                case ACT_SIM_WAKE:
+                    ESP_LOGI(TAG, "rehearsal: sleeping, back in 30 s");
+                    power_simulate_wake(30);
+                    break;
+                case ACT_DEFAULTS:
+                    // Put the world's own daypart back and hold the screen
+                    // dark until that park is actually resident.
+                    {
+                        int yy, mm, dd;
+                        if (pcf_date(&yy, &mm, &dd)) {
+                            daypart_for_log =
+                                daypart_for(yy, mm, dd, pcf_minutes_of_day());
+                            cat_set_daypart(daypart_for_log);
+                        }
+                    }
                     break;
                 default:
                     break;
@@ -414,6 +432,10 @@ static void cat_task(void *arg)
             cat_set_streaks(streaks, hits);
         }
 
+        if (world_is_resident(daypart_for_log)) {
+            cat_set_settling(false);
+        }
+
         cat_render();
 
         if (now - last_batt_us > 5000000) {
@@ -466,8 +488,9 @@ static void cat_task(void *arg)
                 char a[24], b[24];
                 // Both must fit the menu: 15 characters across the footer,
                 // 6 in the header's right corner.
-                snprintf(a, sizeof(a), "SD%uM UP%us",
-                         (unsigned)(freeb / (1024 * 1024)),
+                // Must fit the footer beside the button legend: 14 chars.
+                snprintf(a, sizeof(a), "SD%uG UP%us",
+                         (unsigned)(freeb / (1024 * 1024 * 1024)),
                          (unsigned)(now / 1000000));
                 snprintf(b, sizeof(b), "F%d E%d", cat_scare_level(),
                          cat_flush_errors());
