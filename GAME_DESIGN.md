@@ -13,7 +13,7 @@ reads as "hungry cat", never "tragedy".
 | Stat | Up | Down | Expressed as |
 |---|---|---|---|
 | Hunger | eating | ~6 h full→hungry while awake and active; ¼ rate asleep; exercise burns it faster | food-seeking, standing near the food spot |
-| Affection | petting, play | slow decay; visible poop; ignoring him | distance kept from centre, purr strength, heart frequency, tap responsiveness |
+| Affection | petting, play, making peace after a scare | slow decay; visible poop; ignoring him; **being scared (shake)** | distance kept from centre, purr strength, heart frequency, tap responsiveness |
 | Energy | his sleep (sun schedule) | play, exercise, being kept awake | sluggish vs snappy animations, loaf frequency |
 | Exercise | tilt-walking distance, jumps, play sessions | daily reset | spry gait vs extra loafing |
 
@@ -51,6 +51,30 @@ sits there. Tap to clean (poof + swipe sound). Each visible poop costs a
 little affection per hour — he has standards. New art: one small sprite
 (ASCII, in-repo).
 
+## The microphone, absence, and hiding
+
+The mic (ES8311, unused until now) listens **only while the device is awake**,
+with detection gated during his own speaker sounds. Detection is deliberately
+simple: any sharp sound above an adaptive ambient noise floor. No tuning, no
+keywords — a psst, a snap, a knock all work.
+
+Two distinct off-screen states:
+
+- **Absent** (after a wake): the park is empty — he's elsewhere. Any sound
+  or a screen tap summons him: he trots in from an edge with footsteps,
+  settling into centre. Left alone, he wanders in on his own after a while.
+  No grudge.
+- **Hiding** (after being scared): shaking the device still triggers the
+  arch-and-hiss — but now he then **bolts off-screen** and hides at a spot
+  in the world, and the scare **costs affection**. Sound does not summon a
+  scared cat. While he hides, swiping pans the camera through the looping
+  world; find him tucked at his hiding spot and tap or pet him to make
+  peace (small affection recovery). The camera then eases back to following
+  him and normal life resumes.
+
+While he is off-screen, petting/tap-on-cat/leap zones are inert; the swipe
+camera exists only in the hiding state.
+
 ## Learning: he figures out your schedule
 
 Two tiny on-device models, all local, all in NVS, learning from day one:
@@ -85,9 +109,12 @@ cat awake, **meowing for a few seconds** (procedural ~0.7 s meow, repeated
 ## Build phases
 
 1. Stats engine + NVS persistence + offline catch-up, running silently.
-2. Menu, feeding, poop, status screen.
-3. Behaviour consequences (aloofness, purr scaling, food-seeking).
-4. Meow synth + schedule/bandit models + proactive wake, activating as the
-   models mature.
+2. HUD (icons, hearts, status page), feeding, poop.
+3. Microphone bring-up, absent/summon entrance, scare→hide→search→forgive
+   loop, swipe camera.
+4. Behaviour consequences (aloofness, purr scaling, food-seeking).
+5. Meow synth + schedule/bandit models + proactive wake, activating as the
+   models mature (a proactive wake may open with him meowing from
+   off-screen — answer with any sound to call him in).
 
 Each phase is flashed and lived with before the next.
