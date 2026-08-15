@@ -87,10 +87,14 @@ def main():
     for v in (dawn, dusk, night):
         assert (v[0], v[1]) == (w, h), 'panoramas must share dimensions'
 
-    # The art may be letterboxed; crop to the shared content band.
+    # The art may be letterboxed; crop to the shared content band, then take
+    # extra sky off the top so the scenery scales up against the fixed-size
+    # cat (measured: ~120 px of pure sky above the treetops).
+    SKY_TRIM = 110
     top, bot = content_rows(day[2], w, h)
+    top += SKY_TRIM
     ch = bot - top
-    print(f'content band: rows {top}..{bot} ({ch} px of {h})')
+    print(f'content band: rows {top}..{bot} ({ch} px of {h}, sky trim {SKY_TRIM})')
     cropped = []
     for (vw, vh, img) in (day, dawn, dusk, night):
         cropped.append((vw, ch, img[top * vw * 4:bot * vw * 4]))
