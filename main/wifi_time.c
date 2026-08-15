@@ -36,12 +36,15 @@ static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
         if (retries++ < 3) {
             esp_wifi_connect();
         } else {
+            retries = 0;
             xEventGroupSetBits(s_events, BIT_FAILED);
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         xEventGroupSetBits(s_events, BIT_CONNECTED);
     }
 }
+
+static bool s_stack_up;
 
 static void wifi_time_task(void *arg)
 {
@@ -117,7 +120,35 @@ static void wifi_time_task(void *arg)
     ESP_LOGI(TAG, "Wi-Fi off");
 
 out:
-    vTaskDelete(NULL);
+    // Re-sync every 30 minutes so RTC drift and any missed boot sync can
+    // never leave the scene schedule more than moments off; a failed round
+    // retries sooner.
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(30 * 60 * 1000));
+        xEventGroupClearBits(s_events, BIT_CONNECTED | BIT_FAILED);
+        if (esp_wifi_start() != ESP_OK) {
+            continue;
+        }
+        const EventBits_t bits = xEventGroupWaitBits(
+            s_events, BIT_CONNECTED | BIT_FAILED, pdFALSE, pdFALSE,
+            pdMS_TO_TICKS(20000));
+        if (bits & BIT_CONNECTED) {
+            esp_sntp_config_t sntp_cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+            esp_netif_sntp_init(&sntp_cfg);
+            if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(15000)) == ESP_OK) {
+                time_t now = time(NULL);
+                struct tm lt;
+                localtime_r(&now, &lt);
+                if (pcf_set_civil(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday,
+                                  lt.tm_hour, lt.tm_min, lt.tm_sec) == ESP_OK) {
+                    ESP_LOGI(TAG, "periodic RTC re-sync: %02d:%02d",
+                             lt.tm_hour, lt.tm_min);
+                }
+            }
+            esp_netif_sntp_deinit();
+        }
+        esp_wifi_stop();
+    }
 }
 
 esp_err_t wifi_time_start(void)

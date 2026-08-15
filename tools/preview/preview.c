@@ -42,7 +42,11 @@ int main(int argc, char **argv)
     cat_touch_t t = {0};
     const float dt = 1.0f / CAT_FPS;
 
-    if (want >= 30) {
+    if (want >= 40) {
+        // want = 40 + daypart: portrait pose in that scene variant.
+        cat_set_daypart(want - 40);
+        cat_debug_force(0);
+    } else if (want >= 30) {
         // Night variants: force daypart NIGHT plus a pose.
         cat_set_daypart(4);
         cat_debug_force(want - 30);
