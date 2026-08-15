@@ -126,3 +126,15 @@
 #define MIC_AMBIENT_TAU_S 4.0f
 // Detection stays gated this long after the speaker was last audible.
 #define MIC_GATE_HOLD_S 0.35f
+
+// ---------------------------------------------------------------------------
+// Proactive wake (the learning models)
+// ---------------------------------------------------------------------------
+
+// Which of the three candidate meow voices he uses (picked by ear).
+#define MEOW_VARIANT 0
+
+// Debug hook: >0 force-fires a proactive audition this many seconds after
+// boot, so the whole wake->meow->entice->hit/miss path can be verified by
+// telemetry without waiting weeks for the model. Ship with 0.
+#define MODEL_DEBUG_FIRE_S 0

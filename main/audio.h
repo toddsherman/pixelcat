@@ -36,6 +36,10 @@ void audio_swipe(void);
 // dir < 0 (left).
 void audio_dash(int dir);
 
+// A ~0.7 s procedural meow. Three candidate voices (0-2) to pick by ear;
+// MEOW_VARIANT in config.h selects the one he actually uses.
+void audio_meow(int variant);
+
 // True exactly once per detected sharp sound (a psst, a snap, a knock).
 bool audio_take_sound(void);
 

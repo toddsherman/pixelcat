@@ -1,13 +1,18 @@
 #include "power.h"
 
+#include <time.h>
+
 #include "audio.h"
 #include "battery.h"
 #include "button.h"
 #include "config.h"
 #include "display.h"
+#include "model.h"
 #include "stats.h"
 #include "driver/gpio.h"
+#include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -22,9 +27,64 @@ static const char *TAG = "power";
 
 static int64_t s_last_activity;
 
+// Survives the esp_restart that ends every sleep: the sleep loop's decision
+// to wake proactively, handed to main on the next boot.
+RTC_DATA_ATTR static int g_proactive;
+RTC_DATA_ATTR static int g_proactive_arm;
+RTC_DATA_ATTR static int g_proactive_period;
+
 void power_note_activity(void)
 {
     s_last_activity = esp_timer_get_time();
+}
+
+void power_sleep_now(void)
+{
+    s_last_activity =
+        esp_timer_get_time() - (int64_t)(POWER_IDLE_S + 1) * 1000000;
+}
+
+bool power_take_proactive(int *arm, int *period)
+{
+    if (!g_proactive) {
+        return false;
+    }
+    g_proactive = 0;
+    *arm = g_proactive_arm;
+    *period = g_proactive_period;
+    return true;
+}
+
+// While light-sleeping, ask the schedule model (already loaded in RAM)
+// whether this half-hour deserves a wake. Called every ~20 s of sleep.
+static bool proactive_check(void)
+{
+    const time_t now = time(NULL);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    if (lt.tm_year + 1900 < 2020) {
+        return false;  // no trustworthy clock, no predictions
+    }
+    int pct = -1;
+    bool chg;
+    battery_read(&pct, &chg);
+    const int minutes = lt.tm_hour * 60 + lt.tm_min;
+    const int bucket = model_bucket(lt.tm_wday, minutes);
+    const int32_t day_serial = (lt.tm_year + 1900) * 10000 +
+                               (lt.tm_mon + 1) * 100 + lt.tm_mday;
+    if (!model_should_wake(bucket, pct, day_serial,
+                           (int32_t)(now / 1800))) {
+        return false;
+    }
+    const int period = model_period(minutes);
+    g_proactive_arm =
+        model_pick_arm(period, (float)(esp_random() % 1000) / 1000.0f);
+    g_proactive_period = period;
+    g_proactive = 1;
+    model_store_save();  // the fire is on the books before the restart
+    ESP_LOGI(TAG, "proactive wake: bucket %d p %.2f arm %d", bucket,
+             (double)model_bucket_p(bucket), g_proactive_arm);
+    return true;
 }
 
 void power_idle_check(void)
@@ -63,6 +123,7 @@ void power_idle_check(void)
 
     // The PWR button lives behind the I2C expander (the AXP2101 IRQ line is
     // not routed on this board), so wake for ~1 ms every 300 ms to poll it.
+    int slices = 0;
     for (;;) {
         esp_sleep_enable_timer_wakeup(POLL_US);
         const esp_err_t slept = esp_light_sleep_start();
@@ -81,6 +142,13 @@ void power_idle_check(void)
         if (button_pressed_raw()) {
             ESP_LOGI(TAG, "woken by PWR");
             break;
+        }
+        // Every ~20 s of sleep, let the schedule model consider waking him.
+        if (++slices >= 64) {
+            slices = 0;
+            if (proactive_check()) {
+                break;
+            }
         }
         // Feed the idle task between slices so the watchdog stays calm; this
         // also paces the loop if light sleep keeps being rejected.

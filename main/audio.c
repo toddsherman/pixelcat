@@ -35,6 +35,7 @@ static volatile bool s_boing_pending;
 static volatile bool s_slurp_pending;
 static volatile bool s_swipe_pending;
 static volatile int s_dash_pending;  // 0 none, else direction
+static volatile int s_meow_pending;  // 0 none, else variant+1
 static volatile bool s_stop;
 
 static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
@@ -161,6 +162,9 @@ typedef struct {
     float dash_ph;
     float dash_lpf;
     int dash_dir;
+    float meow_t;     // seconds into the meow, or -1
+    float meow_ph;
+    int meow_var;     // which candidate voice
 } purr_state_t;
 
 static void fill_frame(purr_state_t *st, int16_t *out)
@@ -210,6 +214,12 @@ static void fill_frame(purr_state_t *st, int16_t *out)
         s_dash_pending = 0;
         st->dash_t = 0.0f;
         st->dash_ph = 0.0f;
+    }
+    if (s_meow_pending) {
+        st->meow_var = s_meow_pending - 1;
+        s_meow_pending = 0;
+        st->meow_t = 0.0f;
+        st->meow_ph = 0.0f;
     }
 
     for (int i = 0; i < AUDIO_FRAME_SAMPLES; i++) {
@@ -358,6 +368,46 @@ static void fill_frame(purr_state_t *st, int16_t *out)
             }
         }
 
+        // Meow: a fundamental that rises into the "ee" and settles through
+        // the "ow", sung through a small harmonic stack whose brightness
+        // opens and closes with the vowel. Three candidate voices to pick
+        // from by ear.
+        if (st->meow_t >= 0.0f) {
+            // {duration, start Hz, peak Hz, end Hz, brightness}
+            static const float V[3][5] = {
+                {0.70f, 340.0f, 620.0f, 380.0f, 1.00f},  // classic mrraow
+                {0.55f, 420.0f, 750.0f, 460.0f, 1.25f},  // brighter, kittenish
+                {0.90f, 300.0f, 520.0f, 330.0f, 0.80f},  // low, plaintive
+            };
+            const float *v = V[st->meow_var % 3];
+            const float t = st->meow_t;
+            const float dur = v[0];
+            if (t < dur) {
+                const float u = t / dur;
+                // Pitch: rise over the first 35%, ease down after.
+                const float f =
+                    (u < 0.35f)
+                        ? v[1] + (v[2] - v[1]) * (u / 0.35f)
+                        : v[2] + (v[3] - v[2]) * ((u - 0.35f) / 0.65f) *
+                                     ((u - 0.35f) / 0.65f);
+                const float vib = 1.0f + 0.010f * sinf(TWO_PI * 6.5f * t);
+                st->meow_ph += TWO_PI * f * vib * dt;
+                // Vowel: brightness peaks with the pitch, then closes.
+                const float bright =
+                    v[4] * ((u < 0.4f) ? (0.35f + 1.6f * u) : (0.99f - 0.9f * (u - 0.4f)));
+                const float ph = st->meow_ph;
+                float m = sinf(ph) + 0.55f * bright * sinf(2.0f * ph) +
+                          0.30f * bright * sinf(3.0f * ph) +
+                          0.15f * bright * bright * sinf(4.0f * ph);
+                const float attack = (t < 0.06f) ? (t / 0.06f) : 1.0f;
+                const float rel = (u > 0.75f) ? (1.0f - u) / 0.25f : 1.0f;
+                s += 0.24f * attack * rel * m;
+                st->meow_t += dt;
+            } else {
+                st->meow_t = -1.0f;
+            }
+        }
+
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         out[i] = (int16_t)(s * 30000.0f);
@@ -368,7 +418,7 @@ static bool synth_audible(const purr_state_t *st)
 {
     return st->level > 0.01f || st->chirp_t >= 0.0f || st->hiss_t >= 0.0f ||
            st->boing_t >= 0.0f || st->slurp_t >= 0.0f || st->swipe_t >= 0.0f ||
-           st->dash_t >= 0.0f || st->step_env > 0.01f;
+           st->dash_t >= 0.0f || st->step_env > 0.01f || st->meow_t >= 0.0f;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,7 +459,7 @@ static void purr_task(void *arg)
     (void)arg;
     static int16_t frame[AUDIO_FRAME_SAMPLES];
     static int16_t mic[AUDIO_FRAME_SAMPLES];
-    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f};
+    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f, .meow_t = -1.0f};
     float gate_hold = 0.0f;
     const float frame_s = (float)AUDIO_FRAME_SAMPLES / AUDIO_SAMPLE_RATE;
 
@@ -486,6 +536,11 @@ void audio_swipe(void)
 void audio_dash(int dir)
 {
     s_dash_pending = (dir < 0) ? -1 : 1;
+}
+
+void audio_meow(int variant)
+{
+    s_meow_pending = (variant % 3) + 1;
 }
 
 bool audio_take_sound(void)

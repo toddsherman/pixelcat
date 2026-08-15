@@ -17,6 +17,7 @@
 #include "cat_anims.h"
 #include "cat_bg.h"
 #include "display.h"
+#include "model.h"  // ENTICE_* constants only; model.h is pure C
 
 // ---------------------------------------------------------------------------
 // Palette
@@ -338,6 +339,8 @@ static struct {
     int flee_dir;
     float absent_in;     // seconds until he wanders in on his own
     bool summon_evt, reconcile_evt;
+    int entice;          // -1 none, else the ENTICE_* act he is performing
+    float entice_next;
 
     uint32_t rng;
 } s;
@@ -628,6 +631,7 @@ void cat_init(void)
     s.batt_pct = -1;
     s.st_h = s.st_a = s.st_e = s.st_x = 100;  // until main pushes real values
     s.rng = 0x9E3779B9;
+    s.entice = -1;
     // Every boot is a wake: the park starts empty until something calls him.
     begin_absent();
 
@@ -1068,6 +1072,33 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             break;  // woken only by the triggers above
 
         default:  // passive pool
+            if (s.entice >= 0 && !s.cam_free) {
+                // His opening act, performed until the audition resolves.
+                s.since_touch = 0.0f;
+                s.entice_next -= dt;
+                if (s.entice_next <= 0.0f) {
+                    switch (s.entice) {
+                        case ENTICE_JUMP:
+                            s.boing = true;
+                            enter(M_BIG_JUMP);
+                            s.entice_next = 2.2f + frand01();
+                            break;
+                        case ENTICE_PAW:
+                            enter(M_PAWING);  // pawing the glass
+                            s.entice_next = 2.8f + frand01();
+                            break;
+                        case ENTICE_PACE:
+                            start_wander();
+                            s.entice_next = 1.5f;
+                            break;
+                        default:  // loud purr / meow: he holds and calls
+                            enter(M_PORTRAIT);
+                            s.entice_next = 2.0f;
+                            break;
+                    }
+                }
+                break;
+            }
             if (s.bowl_alive && s.bowl_fresh && s.notice <= 0.0f) {
                 start_goal(1);
                 break;
@@ -1143,6 +1174,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                  purr_scale();
     } else if (s.mode == M_SLEEP) {
         target = 0.16f;  // the low sleeping purr
+    } else if (s.entice == ENTICE_PURR && !s.cam_free) {
+        target = 0.75f;  // the loud invitation purr
     }
     const float rate = (target > s.purr) ? PET_RAMP_UP : PET_RAMP_DOWN;
     const float step = rate * dt;
@@ -1413,6 +1446,23 @@ void cat_restore_trust(int scare_level, bool wary)
 {
     s.scare_level = (scare_level < 0) ? 0 : (scare_level > 4) ? 4 : scare_level;
     s.wary = wary;
+}
+
+void cat_entice(int kind)
+{
+    s.entice = (kind >= 0 && kind < MODEL_ARMS) ? kind : ENTICE_MEOW;
+    s.entice_next = 0.4f;
+    if (s.mode == M_SLEEP) {
+        enter(M_PORTRAIT);
+    }
+}
+
+void cat_entice_stop(void)
+{
+    s.entice = -1;
+    if (s.mode == M_PAWING) {
+        to_passive();
+    }
 }
 
 float cat_debug_world(void)

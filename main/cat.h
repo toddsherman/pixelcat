@@ -84,6 +84,11 @@ int cat_scare_level(void);
 bool cat_wary(void);
 void cat_restore_trust(int scare_level, bool wary);
 
+// Proactive-wake opening acts (ENTICE_* from model.h): start performing the
+// given act until stopped or until the audition ends.
+void cat_entice(int kind);
+void cat_entice_stop(void);
+
 cat_state_t cat_state(void);
 
 // Cumulative count of failed band flushes, for diagnostics.

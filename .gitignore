@@ -11,3 +11,5 @@ main/wifi_secrets.h
 tools/test/game_test
 tools/test/cat_host.c
 tools/test/cat_sprite_host.c
+tools/sim/sim_owner
+tools/sim/model_host.c

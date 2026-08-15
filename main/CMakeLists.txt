@@ -14,6 +14,7 @@ idf_component_register(
         "wifi_time.c"
         "power.c"
         "stats.c"
+        "model.c"
     INCLUDE_DIRS "."
 )
 
