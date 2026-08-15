@@ -15,7 +15,8 @@ set(srcs
     "model.c"
     "sdcard.c"
     "world.c"
-    "logbook.c")
+    "logbook.c"
+    "provision.c")
 
 # config.h decides where the park comes from; this reads the same line so
 # the two can never disagree. Streaming it from the SD card keeps ~8.7 MB of

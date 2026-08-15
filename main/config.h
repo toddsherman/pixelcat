@@ -147,6 +147,12 @@
 // keep it a plain "#define WORLD_FROM_SD <0|1>".)
 #define WORLD_FROM_SD 1
 
+// Where the device fetches missing world files, so the card never has to
+// leave the board. Serve the repo's sd/ directory over plain HTTP:
+//     (cd sd && python3 -m http.server 8088)
+// Empty string disables fetching entirely.
+#define PROVISION_URL "http://192.168.4.87:8088/pixelcat"
+
 #ifndef ESP_PLATFORM
 #undef WORLD_FROM_SD
 #define WORLD_FROM_SD 0
