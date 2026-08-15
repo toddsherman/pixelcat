@@ -92,3 +92,6 @@ int cat_flush_errors(void);
 // Preview-only: force an internal behaviour mode. Numbers are
 // implementation-specific; harmless on hardware.
 void cat_debug_force(int mode);
+
+// Test-only: his current world position, logical px.
+float cat_debug_world(void);

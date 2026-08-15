@@ -270,6 +270,79 @@ int main(void)
     expect(cat_take_reconcile(), "the purr makes peace");
     expect(!cat_wary() && cat_scare_level() == 0, "fear resets to baseline");
 
+    // ---------------- Phase 4 ----------------
+
+    // --- Affection shows in the purr ---
+    fresh_present_cat();
+    cat_set_stats(80, 100, 80, 50);
+    pet_until_purr(2.0f, 5.0f);  // never reached: just pet for 5 s
+    const float purr_devoted = cat_purr_level();
+    fresh_present_cat();
+    cat_set_stats(80, 0, 80, 50);
+    pet_until_purr(2.0f, 5.0f);
+    const float purr_aloof = cat_purr_level();
+    expect(purr_devoted > purr_aloof + 0.1f,
+           "a devoted cat purrs harder than an aloof one");
+
+    // --- Energy shows in pace: a tired cat takes longer to do anything ---
+    fresh_present_cat();
+    cat_set_stats(80, 60, 100, 50);
+    scare();
+    int fresh_frames = 0;
+    {
+        fresh_present_cat();
+        cat_set_stats(80, 60, 100, 50);
+        cat_touch_t t = {0};
+        cat_update(DT, &t, 8.0f, 0.0f);
+        while (cat_state() != CAT_HIDING && fresh_frames < 500) {
+            cat_update(DT, &t, 0.0f, 0.0f);
+            fresh_frames++;
+        }
+    }
+    int tired_frames = 0;
+    {
+        fresh_present_cat();
+        cat_set_stats(80, 60, 0, 50);
+        cat_touch_t t = {0};
+        cat_update(DT, &t, 8.0f, 0.0f);
+        while (cat_state() != CAT_HIDING && tired_frames < 500) {
+            cat_update(DT, &t, 0.0f, 0.0f);
+            tired_frames++;
+        }
+    }
+    expect(tired_frames > fresh_frames + 10,
+           "a tired cat is slower to react than a rested one");
+
+    // --- Hunger pulls him to the food spot ---
+    float span_hungry = 0.0f, span_full = 0.0f;
+    for (int hungry = 0; hungry < 2; hungry++) {
+        fresh_present_cat();
+        cat_set_stats(80, 60, 80, 50);
+        cat_debug_force(50);  // bowl: establishes the food spot
+        for (int i = 0; i < (int)(14.0f / DT); i++) {
+            idle_frames(1);
+        }
+        drain_events();
+        const float spot = cat_debug_world();
+        cat_set_stats(hungry ? 10 : 95, 60, 80, 50);
+        float max_d = 0.0f;
+        for (int i = 0; i < (int)(60.0f / DT); i++) {
+            idle_frames(1);
+            const float d = cat_debug_world() - spot;
+            const float ad = (d < 0) ? -d : d;
+            if (ad > max_d) {
+                max_d = ad;
+            }
+        }
+        if (hungry) {
+            span_hungry = max_d;
+        } else {
+            span_full = max_d;
+        }
+    }
+    expect(span_hungry < span_full,
+           "a hungry cat keeps closer to where food appears");
+
     printf(s_failures ? "\n%d FAILURES\n" : "\nall tests pass\n", s_failures);
     return s_failures ? 1 : 0;
 }

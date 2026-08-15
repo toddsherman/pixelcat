@@ -590,6 +590,7 @@ void cat_restore_trust(int scare_level, bool wary)
 {
     (void)scare_level; (void)wary;
 }
+float cat_debug_world(void) { return 0.0f; }
 void cat_set_battery(int percent, bool charging) { (void)percent; (void)charging; }
 void cat_set_daypart(int variant) { (void)variant; }
 

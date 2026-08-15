@@ -319,6 +319,8 @@ static struct {
     float play_left;     // seconds remaining in the play session
     float poop_x[3];
     bool poop_live[3];
+    float food_spot;     // where food last appeared; a hungry cat lingers
+    bool food_spot_set;
     float poof_x, poof_t;
     float notice;        // reaction delay before he heads for a new drop
     int goal_kind;       // 0 none, 1 bowl, 2 ball
@@ -346,6 +348,28 @@ static float frand01(void)
     s.rng ^= s.rng >> 17;
     s.rng ^= s.rng << 5;
     return (float)(s.rng >> 8) * (1.0f / 16777216.0f);
+}
+
+// ---------------------------------------------------------------------------
+// How the stats read on him (Phase 4). Each returns a 0..1 fraction.
+// ---------------------------------------------------------------------------
+
+static float f01(int v)
+{
+    return (v < 0) ? 1.0f : (v > 100) ? 1.0f : (float)v / 100.0f;
+}
+
+// Tired cats do everything a beat slower; rested ones are snappy.
+static float anim_pace(void)
+{
+    return 0.8f + 0.3f * f01(s.st_e);
+}
+
+// Affection shows in the purr: a devoted cat rumbles harder. The floor
+// keeps reconciliation purrs reachable even for an aloof cat.
+static float purr_scale(void)
+{
+    return 0.7f + 0.3f * f01(s.st_a);
 }
 
 static void enter(mode_t m)
@@ -393,7 +417,10 @@ static mode_t random_passive(void)
 static void to_passive(void)
 {
     enter(random_passive());
-    s.decide_in = 3.0f + 4.0f * frand01();
+    // Tired or under-exercised cats loaf longer between decisions.
+    const float loaf = (1.6f - 0.6f * f01(s.st_e)) *
+                       (1.3f - 0.3f * f01(s.st_x));
+    s.decide_in = (3.0f + 4.0f * frand01()) * loaf;
 }
 
 // Start a wandering trot: the world is endless, so wander is just a
@@ -443,6 +470,8 @@ static void drop_bowl(void)
     s.bowl_fresh = true;
     s.bowl_ttl = 90.0f;
     s.notice = 0.9f;
+    s.food_spot = s.bowl_x;  // hungry cats will remember this place
+    s.food_spot_set = true;
 }
 
 static void drop_ball(void)
@@ -463,7 +492,9 @@ static void goal_arrive(void);
 
 static void start_goal(int kind)
 {
-    const float obj = (kind == 1) ? s.bowl_x : s.ball_x;
+    const float obj = (kind == 1) ? s.bowl_x
+                      : (kind == 2) ? s.ball_x
+                                    : s.food_spot;
     const float d = world_delta(s.world_x, obj);
     const int dir = (d < 0.0f) ? -1 : 1;
     const float off = (dir > 0) ? (SPRITE_W - 1.0f) * PIX_SCALE
@@ -487,6 +518,13 @@ static void goal_arrive(void)
 {
     const int kind = s.goal_kind;
     s.goal_kind = 0;
+    if (kind == 3) {
+        // Food-seeking: he stands where dinner usually appears and waits,
+        // pointedly.
+        enter(M_PORTRAIT);
+        s.decide_in = 5.0f + 5.0f * frand01();
+        return;
+    }
     const float obj = (kind == 1) ? s.bowl_x : s.ball_x;
     s.facing_left = world_delta(s.world_x, obj) < 0.0f;
     enter((kind == 1) ? M_EAT : M_PLAY_PAW);
@@ -611,7 +649,7 @@ void cat_init(void)
 
 void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
-    s.t += dt;
+    s.t += dt * anim_pace();  // a tired cat runs a beat slow, everywhere
     s.tap_age += dt;
     if (s.tap_age > DOUBLE_TAP_S) {
         s.tap_side = 0;
@@ -735,10 +773,11 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     }
 
     // Meals and play sessions hold his attention: no dozing off, and tilt or
-    // side taps cannot yank him away from the bowl or the ball.
-    const bool busy = s.goal_kind != 0 || s.mode == M_EAT ||
-                      s.mode == M_PLAY_PAW || s.play_left > 0.0f ||
-                      (s.bowl_alive && s.bowl_fresh);
+    // side taps cannot yank him away from the bowl or the ball. A stroll to
+    // the food spot (goal 3) is not busy — anything can interrupt it.
+    const bool busy = (s.goal_kind != 0 && s.goal_kind != 3) ||
+                      s.mode == M_EAT || s.mode == M_PLAY_PAW ||
+                      s.play_left > 0.0f || (s.bowl_alive && s.bowl_fresh);
     if (busy) {
         s.since_touch = 0.0f;
     }
@@ -760,6 +799,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         s.wandering = false;
         s.tilt_walk = false;
         s.tilt_leap = true;
+        s.goal_kind = 0;  // a food-spot stroll yields to the tilt
         enter(M_LEAP);
         s.dash = tilt_dir;
     } else if (tilt_ok && tilt_mag > TILT_WALK_ON && tilt_mag <= TILT_LEAP_ON &&
@@ -768,6 +808,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         s.facing_left = tilt_dir < 0;
         s.wandering = false;
         s.tilt_walk = true;
+        s.goal_kind = 0;
         enter(M_TROT);
     }
 
@@ -793,11 +834,15 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             enter(M_PET);
         } else if (tap_on_cat && !tap_claimed && !busy && !s.cam_free) {
             // A tap earns a glance and a tail flick; jumping is a play move.
+            // An aloof cat sometimes cannot be bothered to give even that.
             if (s.mode == M_SLEEP) {
                 s.chirp = true;
+                enter(M_PORTRAIT);
+                s.decide_in = 1.5f;
+            } else if (frand01() < 0.25f + 0.75f * f01(s.st_a)) {
+                enter(M_PORTRAIT);
+                s.decide_in = 1.5f;
             }
-            enter(M_PORTRAIT);
-            s.decide_in = 1.5f;
         } else if (tap_on_side && !tap_claimed && !busy && !s.cam_free &&
                    s.mode != M_PET) {
             if (s.tap_side == side_of) {
@@ -1037,7 +1082,16 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             }
             s.decide_in -= dt;
             if (s.decide_in <= 0.0f) {
-                if (frand01() < 0.35f) {
+                // A hungry cat drifts to where food appears and waits there.
+                if (s.st_h < 35 && s.food_spot_set && frand01() < 0.5f &&
+                    fabsf(world_delta(s.world_x, s.food_spot)) >
+                        8.0f * PIX_SCALE) {
+                    start_goal(3);
+                    break;
+                }
+                // An aloof cat keeps moving away; a devoted one stays close.
+                const float wander_p = 0.20f + 0.35f * (1.0f - f01(s.st_a));
+                if (frand01() < wander_p) {
                     start_wander();
                 } else {
                     to_passive();
@@ -1085,7 +1139,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     // --- purr chases petting ---
     float target = 0.0f;
     if (s.mode == M_PET && touch->down) {
-        target = 0.35f + 0.65f * fminf(s.stroke_speed / PET_SPEED_FULL, 1.0f);
+        target = (0.35f + 0.65f * fminf(s.stroke_speed / PET_SPEED_FULL, 1.0f)) *
+                 purr_scale();
     } else if (s.mode == M_SLEEP) {
         target = 0.16f;  // the low sleeping purr
     }
@@ -1118,7 +1173,9 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                     break;
                 }
             }
-            s.heart_spawn = 0.4f;
+            // Hearts come thick from a devoted cat, sparingly from an aloof
+            // one.
+            s.heart_spawn = 0.25f + 0.75f * (1.0f - f01(s.st_a));
         }
     }
     for (int i = 0; i < MAX_HEARTS; i++) {
@@ -1356,6 +1413,11 @@ void cat_restore_trust(int scare_level, bool wary)
 {
     s.scare_level = (scare_level < 0) ? 0 : (scare_level > 4) ? 4 : scare_level;
     s.wary = wary;
+}
+
+float cat_debug_world(void)
+{
+    return s.world_x;
 }
 
 void cat_debug_force(int mode)
