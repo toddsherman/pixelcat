@@ -3,6 +3,10 @@
 You are drawing ONE animation cycle for a minimal pixel-art white cat,
 16 px wide, side-view **facing LEFT** (the engine mirrors for right).
 
+The cat is derived from Elthen's 2D Pixel Art Cat Sprites, modified — see
+CREDITS.md. Match his proportions and silhouette; new cycles are extensions
+of that character, not a fresh design.
+
 ## Charset (one char = one pixel)
 - `.` transparent (checkered room shows through)
 - `#` dark outline — EVERY silhouette edge pixel must be `#`
