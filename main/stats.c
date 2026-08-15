@@ -22,11 +22,9 @@
 #define AFFECT_SCARE_STEP 3.0f
 #define AFFECT_SCARE_MAX 20.0f
 #define AFFECT_RECONCILE 4.0f
-// Petting: gain scales with purr strength and a per-session budget, so spam
-// cannot max a cat. The budget refills over ~40 min of leaving him be.
-#define PET_GAIN_PER_S 0.9f
-#define PET_SESSION_BUDGET 12.0f
-#define PET_BUDGET_REFILL_S (40.0f * 60.0f)
+// Petting fills the heart one gauge row (20 points) per 5 seconds: a
+// deliberate, readable rate — 25 s of genuine petting fills it from empty.
+#define PET_FILL_PER_S (20.0f / 5.0f)
 #define PET_PURR_MIN 0.2f  // above the sleeping purr, below any petting purr
 
 // A good active day: ~3500 logical px of walking, or ~50 jumps, or a mix.
@@ -55,7 +53,7 @@
 #define OFFLINE_MAX_S (30.0 * 24.0 * 3600.0)
 
 static stats_t s_stats;
-static float s_pet_budget;
+static float s_pet_budget;  // vestigial: kept only for blob layout stability
 static int32_t s_day_serial;  // 0 = unknown
 static float s_poop_due_s;    // >0 counting down, 0 none, -1 ready to spawn
 static int s_poop_count;
@@ -104,7 +102,7 @@ void stats_reset(void)
     s_stats.affection = 55.0f;
     s_stats.exercise = 0.0f;
     s_stats.play = 0.0f;
-    s_pet_budget = PET_SESSION_BUDGET;
+    s_pet_budget = 0.0f;
     s_day_serial = 0;
     s_poop_due_s = 0.0f;
     s_poop_count = 0;
@@ -133,18 +131,7 @@ void stats_tick(float dt, bool asleep, float purr)
     }
 
     if (!asleep && purr > PET_PURR_MIN) {
-        const float gain = purr * PET_GAIN_PER_S *
-                           (s_pet_budget / PET_SESSION_BUDGET) * dt;
-        s_stats.affection += gain;
-        s_pet_budget -= gain;
-        if (s_pet_budget < 0.0f) {
-            s_pet_budget = 0.0f;
-        }
-    } else {
-        s_pet_budget += dt * (PET_SESSION_BUDGET / PET_BUDGET_REFILL_S);
-        if (s_pet_budget > PET_SESSION_BUDGET) {
-            s_pet_budget = PET_SESSION_BUDGET;
-        }
+        s_stats.affection += dt * PET_FILL_PER_S;
     }
 
     s_stats.food = clamp01_100(s_stats.food);
@@ -268,7 +255,7 @@ void stats_offline(double seconds)
         }
     }
 
-    s_pet_budget = PET_SESSION_BUDGET;
+    s_pet_budget = 0.0f;
 }
 
 // ---------------------------------------------------------------------------

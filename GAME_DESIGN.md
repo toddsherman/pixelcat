@@ -18,8 +18,9 @@ fed, loved, exercised — one direction, no mixed readings.
 | Exercise | tilt-walking distance, jumps, play sessions | daily reset | a filling bar IS his tiredness: pleasantly worn out, slower pace, longer loafs, earlier naps; the morning reset is a fresh, spry cat |
 
 There is no separate energy stat — a full exercise bar implies a cat who
-wants his sleep, and the daily reset hands him a new morning. Petting has
-diminishing returns per session — spam doesn't max a cat.
+wants his sleep, and the daily reset hands him a new morning. Petting fills
+the heart at a deliberate, readable rate: one gauge row per 5 seconds of
+genuine (purring) petting — 25 s of attention fills it from empty.
 
 ## HUD (no menu)
 

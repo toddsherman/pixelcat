@@ -9,7 +9,24 @@
 #include <string.h>
 
 #include "cat.h"
+#include "cat_bg.h"
 #include "config.h"
+#include "stats.h"
+
+// Shortest signed distance in the looping world (the harness must wrap the
+// same way the engine does, or a stroll across the seam reads as half the
+// world).
+static float world_dist(float a, float b)
+{
+    float d = a - b;
+    if (d > (float)BG_WORLD_W * 0.5f) {
+        d -= (float)BG_WORLD_W;
+    }
+    if (d < -(float)BG_WORLD_W * 0.5f) {
+        d += (float)BG_WORLD_W;
+    }
+    return (d < 0.0f) ? -d : d;
+}
 
 // Display shim (same shape as the preview's).
 #define BAND_PIXELS (LCD_H_RES * BAND_ROWS)
@@ -360,35 +377,42 @@ int main(void)
     expect(doze_worn < doze_fresh,
            "a full exercise bar means an earlier nap");
 
-    // --- Hunger pulls him to the food spot ---
-    float span_hungry = 0.0f, span_full = 0.0f;
-    for (int hungry = 0; hungry < 2; hungry++) {
-        fresh_present_cat();
-        cat_set_stats(80, 60, 50, 0);
-        cat_debug_force(50);  // bowl: establishes the food spot
-        for (int i = 0; i < (int)(14.0f / DT); i++) {
-            idle_frames(1);
-        }
-        drain_events();
-        const float spot = cat_debug_world();
-        cat_set_stats(hungry ? 10 : 95, 60, 50, 0);
-        float max_d = 0.0f;
-        for (int i = 0; i < (int)(60.0f / DT); i++) {
-            idle_frames(1);
-            const float d = cat_debug_world() - spot;
-            const float ad = (d < 0) ? -d : d;
-            if (ad > max_d) {
-                max_d = ad;
-            }
-        }
-        if (hungry) {
-            span_hungry = max_d;
-        } else {
-            span_full = max_d;
+    // --- Hunger pulls him back to where food appears ---
+    fresh_present_cat();
+    cat_set_stats(80, 60, 50, 0);
+    cat_debug_force(50);  // bowl: establishes the food spot
+    for (int i = 0; i < (int)(14.0f / DT); i++) {
+        idle_frames(1);
+    }
+    drain_events();
+    const float spot = cat_debug_world();
+    // Carry him well away on a tilt, then leave a hungry cat to his
+    // stomach: the food-seek stroll should bring him back on its own.
+    for (int i = 0; i < (int)(3.0f / DT); i++) {
+        cat_touch_t t = {0};
+        cat_update(DT, &t, 0.0f, 3.0f);
+    }
+    expect(world_dist(cat_debug_world(), spot) > 150.0f,
+           "the tilt carried him away from the spot");
+    cat_set_stats(10, 60, 50, 0);
+    int returned = 0;
+    for (int i = 0; i < (int)(60.0f / DT) && !returned; i++) {
+        idle_frames(1);
+        if (world_dist(cat_debug_world(), spot) < 80.0f) {
+            returned = 1;
         }
     }
-    expect(span_hungry < span_full,
-           "a hungry cat keeps closer to where food appears");
+    expect(returned, "a hungry cat drifts back to where food appears");
+
+    // --- The heart fills one gauge row (20 pts) per 5 s of petting ---
+    stats_reset();
+    const float a0 = stats_get()->affection;
+    for (int i = 0; i < (int)(5.0f / DT); i++) {
+        stats_tick(DT, false, 0.8f);  // purring under a stroke
+    }
+    const float gained = stats_get()->affection - a0;
+    expect(gained > 18.0f && gained < 22.0f,
+           "5 s of petting fills one heart row");
 
     printf(s_failures ? "\n%d FAILURES\n" : "\nall tests pass\n", s_failures);
     return s_failures ? 1 : 0;

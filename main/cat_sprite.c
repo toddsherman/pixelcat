@@ -42,6 +42,7 @@ enum {
     C_EYE,     // the cat's eyes: dark by day, glowing green at night
     C_POOP,
     C_UI_DIM,  // quiet HUD icons
+    C_ORANGE,  // the exercise gauge (Strava orange)
     C_COUNT,
 };
 
@@ -64,6 +65,7 @@ static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_EYE] = {44, 38, 48},
     [C_POOP] = {124, 86, 55},
     [C_UI_DIM] = {98, 98, 112},
+    [C_ORANGE] = {252, 76, 2},
 };
 
 #define SWAP16(v) ((uint16_t)((((v) >> 8) & 0xFF) | (((v) & 0xFF) << 8)))
@@ -103,6 +105,7 @@ static uint8_t char_color(char ch)
         case 'W': return C_WHITE;
         case 'b': return C_POOP;
         case 'g': return C_BATT_G;
+        case 'o': return C_ORANGE;
         default: return C_BG;
     }
 }
@@ -169,11 +172,11 @@ static const char *const POOF[] = {
 // dumbbell (exercise). All 5 cells tall on the same top line; each renders
 // as a gauge — grey art filled bottom-up with its true colours.
 static const char *const ICON_BALL[] = {
-    ".###.",
-    "#rrW#",
-    "#rWr#",
-    "#Wrr#",
-    ".rrr.",
+    ".###....",
+    "#rrW#...",
+    "#rWr#...",
+    "#Wrr#rrr",  // the loose thread trails off to the right
+    ".rrr....",
 };
 
 static const char *const ICON_FISH[] = {
@@ -193,11 +196,11 @@ static const char *const ICON_HEART[] = {
 };
 
 static const char *const ICON_EXER[] = {
-    ".g...g.",
-    "gg...gg",
-    "g#####g",
-    "gg...gg",
-    ".g...g.",
+    "oo...oo",
+    "oo...oo",
+    "ooooooo",
+    "oo...oo",
+    "oo...oo",
 };
 
 // Small overlay sprites are stamped unflipped with their own widths.
@@ -424,14 +427,14 @@ static bool touch_near_cat(float cx, float cy)
            cy > FLOOR_Y - 24.0f && cy < FLOOR_Y + 8.0f;
 }
 
-// The passive pool: sheet rows 1, 2, 3 and 4. Pawing left the rotation when
-// it became a play move — it only appears batting the yarn ball now.
+// The passive pool: sheet rows 1, 2 and 4. Pawing became a play move, and
+// paw-cleaning is reserved for the after-dinner wash-up — idle grooming is
+// ear-cleaning only.
 static mode_t random_passive(void)
 {
     const float r = frand01();
-    if (r < 0.34f) return M_PORTRAIT;
-    if (r < 0.62f) return M_PROFILE;
-    if (r < 0.82f) return M_CLEAN_PAW;
+    if (r < 0.38f) return M_PORTRAIT;
+    if (r < 0.70f) return M_PROFILE;
     return M_CLEAN_EAR;
 }
 
@@ -638,7 +641,7 @@ static bool palette_ungraded(int idx)
 {
     return idx == C_BATT_G || idx == C_BATT_Y || idx == C_BATT_R ||
            idx == C_BATT_B || idx == C_BLACK || idx == C_WHITE ||
-           idx == C_UI_DIM;
+           idx == C_UI_DIM || idx == C_ORANGE;
 }
 
 void cat_init(void)
@@ -748,14 +751,14 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     // ball once he has had his games.
     bool tap_claimed = false;
     if (released_tap && s.last_y < 9.0f && s.last_x < 41.0f) {
-        if (s.last_x >= 26.0f) {
+        if (s.last_x >= 29.0f) {
             // The dumbbell is a pure gauge; the tap just doesn't fall
             // through to the world.
-        } else if (s.last_x >= 19.0f) {
+        } else if (s.last_x >= 22.0f) {
             s.status_screen = true;
             s.was_down = touch->down;
             return;
-        } else if (s.last_x >= 9.0f) {
+        } else if (s.last_x >= 12.0f) {
             if (s.st_f < 95) {
                 drop_bowl();
             }
@@ -1062,11 +1065,12 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             }
             if (s.t > 6.5f) {
                 // Bowl finished: the refill fires through main, and like any
-                // self-respecting cat he washes up after dinner.
+                // self-respecting cat he washes his paw after dinner — the
+                // only time that animation appears.
                 s.bowl_alive = false;
                 s.bowl_fresh = false;
                 s.eat_evt = true;
-                enter((frand01() < 0.5f) ? M_CLEAN_PAW : M_CLEAN_EAR);
+                enter(M_CLEAN_PAW);
                 s.decide_in = 5.0f + 3.0f * frand01();
             }
             break;
@@ -1611,9 +1615,9 @@ static void compose(void)
     // (affection), dumbbell (exercise) — all 5 cells tall, all 2 cells
     // below the top edge. Each fills bottom-up with its stat.
     stamp_gauge(3, 2, ICON_BALL, 5, s.st_p);
-    stamp_gauge(10, 2, ICON_FISH, 5, s.st_f);
-    stamp_gauge(21, 2, ICON_HEART, 5, s.st_a);
-    stamp_gauge(28, 2, ICON_EXER, 5, s.st_x);
+    stamp_gauge(13, 2, ICON_FISH, 5, s.st_f);
+    stamp_gauge(24, 2, ICON_HEART, 5, s.st_a);
+    stamp_gauge(31, 2, ICON_EXER, 5, s.st_x);
 
     // Battery, top right, on the same line at the same height: a closed
     // 9x5 rectangle with 7 fill cells.
