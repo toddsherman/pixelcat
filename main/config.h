@@ -138,20 +138,13 @@
 // Where the park comes from
 // ---------------------------------------------------------------------------
 
-// 1 = stream the world from the SD card into PSRAM. This frees ~8.7 MB of
-// flash (the baked arrays were 90% of the firmware image) and lifts the cap
-// on how many scene variants can exist — weather needs far more than the
-// partition can hold. 0 = compile the park into the binary, as before.
-// Host tools always take the baked path.
+// 1 = carry the park DEFLATE'd and inflate it into PSRAM at run time (the
+// blocky art compresses ~75:1, so all five variants cost 127 KB instead of
+// 9.2 MB), with an SD card file overriding a variant when present. 0 =
+// compile the raw arrays in, as before. Host tools always take the raw path.
 // (CMakeLists.txt greps this line to decide whether to compile cat_bg.c —
 // keep it a plain "#define WORLD_FROM_SD <0|1>".)
 #define WORLD_FROM_SD 1
-
-// Where the device fetches missing world files, so the card never has to
-// leave the board. Serve the repo's sd/ directory over plain HTTP:
-//     (cd sd && python3 -m http.server 8088)
-// Empty string disables fetching entirely.
-#define PROVISION_URL "http://192.168.4.87:8088/pixelcat"
 
 #ifndef ESP_PLATFORM
 #undef WORLD_FROM_SD

@@ -15,8 +15,7 @@ set(srcs
     "model.c"
     "sdcard.c"
     "world.c"
-    "logbook.c"
-    "provision.c")
+    "logbook.c")
 
 # config.h decides where the park comes from; this reads the same line so
 # the two can never disagree. Streaming it from the SD card keeps ~8.7 MB of
@@ -28,7 +27,8 @@ set(srcs
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/config.h" _world_from_sd
      REGEX "^#define WORLD_FROM_SD 1$")
 if(_world_from_sd)
-    message(STATUS "pixelcat: park streams from SD (cat_bg.c not compiled)")
+    message(STATUS "pixelcat: park carried compressed (cat_bg.c not compiled)")
+    list(APPEND srcs "cat_bg_z.c")
 else()
     message(STATUS "pixelcat: park baked into flash")
     list(APPEND srcs "cat_bg.c")

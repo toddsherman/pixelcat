@@ -1,14 +1,18 @@
 #include "config.h"
 #if WORLD_FROM_SD
 
-// The park, streamed from the SD card.
+// The park.
 //
 // Each variant is BG_WORLD_W pre-rotated column strips of BG_STRIP_H pixels
-// — 1.75 MB apiece, far too much to keep five of in flash. Two live in
-// PSRAM instead: the one being drawn and a spare the loader fills in the
-// background, so a daypart change never stalls a frame. With no card (or a
-// missing file) the spare is painted with a plain procedural sky, which is
-// dull but perfectly playable.
+// — 1.75 MB apiece, far too much to keep five of in flash uncompressed. But
+// the art is 8-pixel blocky, so it DEFLATEs about 75:1: all five variants
+// ride along in 127 KB and inflate into PSRAM through the ROM's tinfl,
+// costing nothing but a fraction of a second.
+//
+// Two worlds live in PSRAM: the one being drawn and a spare the loader
+// fills in the background, so a daypart change never stalls a frame. A
+// matching world_N.bin on the SD card overrides the built-in one, which is
+// how new art gets tried without a reflash.
 
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +24,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "sdcard.h"
+#include "world.h"
 
 static const char *TAG = "world";
 
@@ -95,9 +100,30 @@ static bool load_variant(strip_t *dst, int variant)
     return true;
 }
 
+// Raw DEFLATE out of the ESP32-S3 ROM. Declared here because IDF ships no
+// header for the ROM's miniz on this target.
+#define TINFL_FAILED ((size_t)-1)
+size_t tinfl_decompress_mem_to_mem(void *out, size_t out_len, const void *src,
+                                   size_t src_len, int flags);
+
+static bool inflate_variant(strip_t *dst, int variant)
+{
+    const size_t got = tinfl_decompress_mem_to_mem(
+        dst, WORLD_BYTES, cat_bg_z[variant], cat_bg_z_len[variant], 0);
+    if (got != WORLD_BYTES) {
+        ESP_LOGW(TAG, "variant %d inflated to %u, expected %u", variant,
+                 (unsigned)got, (unsigned)WORLD_BYTES);
+        return false;
+    }
+    return true;
+}
+
 static void fill(int slot, int variant)
 {
-    if (!load_variant(s_buf[slot], variant)) {
+    // The card wins if it has this variant — that is how new art is tried
+    // without a reflash — otherwise the built-in copy inflates.
+    if (!load_variant(s_buf[slot], variant) &&
+        !inflate_variant(s_buf[slot], variant)) {
         paint_plain(s_buf[slot], variant);
     }
     s_variant[slot] = variant;
@@ -133,18 +159,23 @@ esp_err_t world_init(int variant)
             return ESP_ERR_NO_MEM;
         }
     }
-    // The first variant loads synchronously: there is nothing to draw until
-    // it lands.
-    fill(0, variant);
+    // Something safe to draw immediately, so the first frames have a sky
+    // rather than uninitialised PSRAM.
+    paint_plain(s_buf[0], variant);
+    s_variant[0] = -1;
     s_active = 0;
 
+    // The real park inflates on the loader's stack, never the caller's:
+    // miniz keeps an ~11 KB decompressor as a local, which is more than
+    // app_main has to spare.
     s_requests = xQueueCreate(4, sizeof(int));
     if (!s_requests ||
-        xTaskCreatePinnedToCore(loader_task, "world", 4096, NULL, 3, NULL, 0) !=
-            pdPASS) {
+        xTaskCreatePinnedToCore(loader_task, "world", 16384, NULL, 3, NULL,
+                                0) != pdPASS) {
         ESP_LOGW(TAG, "no loader task; the park will not change with the sun");
         return ESP_FAIL;
     }
+    world_request(variant);
     return ESP_OK;
 }
 

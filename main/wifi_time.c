@@ -13,7 +13,6 @@
 #include "freertos/task.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
-#include "provision.h"
 #include "rtc.h"
 
 #if __has_include("wifi_secrets.h")
@@ -123,17 +122,6 @@ static void wifi_time_task(void *arg)
             ESP_LOGW(TAG, "NTP timed out; RTC keeps its own time");
         }
         esp_netif_sntp_deinit();
-    }
-
-    // While the radio is already up: pull down any world the card is
-    // missing. A fresh card fills itself here rather than being carried to
-    // a computer. Anything written means the park on disk changed under
-    // the loader, so come back through a clean boot.
-    if (provision_run()) {
-        ESP_LOGI(TAG, "park installed; restarting to load it");
-        esp_wifi_stop();
-        vTaskDelay(pdMS_TO_TICKS(200));
-        esp_restart();
     }
 
     esp_wifi_stop();
