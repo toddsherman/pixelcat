@@ -28,6 +28,26 @@ def blend(a, b):
     return bytearray((x + y) // 2 for x, y in zip(a, b))
 
 
+def content_rows(img, w, h):
+    """Trim white letterbox margins: the art band is wherever rows stop being
+    near-white."""
+    def row_white(y):
+        n = hit = 0
+        for x in range(0, w, 32):
+            r, g, b = img[(y * w + x) * 4:(y * w + x) * 4 + 3]
+            n += 1
+            if r > 245 and g > 245 and b > 245:
+                hit += 1
+        return hit >= n - 1
+    top = 0
+    while top < h - 1 and row_white(top):
+        top += 1
+    bot = h - 1
+    while bot > top and row_white(bot):
+        bot -= 1
+    return top, bot + 1
+
+
 def bake(img, w, h, world_w):
     # Area-average to the coarse block grid, then expand to hard blocks.
     gw, gh = world_w // BLOCK, VIEW_H // BLOCK
@@ -59,13 +79,23 @@ def bake(img, w, h, world_w):
 
 def main():
     bg_dir, out_dir = sys.argv[1], sys.argv[2]
-    day = decode_png(f'{bg_dir}/park-panorama-blue-sky.png')
-    dawn = decode_png(f'{bg_dir}/park-panorama-dawn.png')
-    dusk = decode_png(f'{bg_dir}/park-panorama-dusk.png')
-    night = decode_png(f'{bg_dir}/park-panorama-night-lit.png')
+    day = decode_png(f'{bg_dir}/park.png')
+    dawn = decode_png(f'{bg_dir}/dawn.png')
+    dusk = decode_png(f'{bg_dir}/dusk.png')
+    night = decode_png(f'{bg_dir}/night.png')
     w, h = day[0], day[1]
     for v in (dawn, dusk, night):
         assert (v[0], v[1]) == (w, h), 'panoramas must share dimensions'
+
+    # The art may be letterboxed; crop to the shared content band.
+    top, bot = content_rows(day[2], w, h)
+    ch = bot - top
+    print(f'content band: rows {top}..{bot} ({ch} px of {h})')
+    cropped = []
+    for (vw, vh, img) in (day, dawn, dusk, night):
+        cropped.append((vw, ch, img[top * vw * 4:bot * vw * 4]))
+    day, dawn, dusk, night = cropped
+    h = ch
 
     world_w = int(round(w * (VIEW_H / h) / BLOCK)) * BLOCK
     twilight = (w, h, blend(dusk[2], night[2]))
