@@ -176,6 +176,22 @@ static void cat_task(void *arg)
             audio_dash(dash_dir);
             stats_on_jump();
         }
+        if (cat_take_eat()) {
+            stats_on_eat(45.0f);
+            stats_note_fed();
+            stats_store_save();
+        }
+        if (cat_take_play_hit()) {
+            stats_on_play_hit();
+        }
+        if (cat_take_poop_clean()) {
+            stats_set_poop_count(cat_poop_count());
+            stats_store_save();
+        }
+        if (stats_take_poop_ready()) {
+            cat_spawn_poop();
+            stats_set_poop_count(cat_poop_count());
+        }
 
         if (stats_catchup_done() && now - last_save_us > 300 * 1000000LL) {
             last_save_us = now;
@@ -191,6 +207,9 @@ static void cat_task(void *arg)
             if (battery_read(&pct, &chg)) {
                 cat_set_battery(pct, chg);
             }
+            const stats_t *sv = stats_get();
+            cat_set_stats((int)sv->hunger, (int)sv->affection,
+                          (int)sv->energy, (int)sv->exercise);
             int yy, mm, dd;
             if (pcf_date(&yy, &mm, &dd)) {
                 daypart_for_log = daypart_for(yy, mm, dd, pcf_minutes_of_day());
@@ -267,6 +286,7 @@ void app_main(void)
         nvs = nvs_flash_init();
     }
     stats_reset();
+    stats_seed((uint32_t)esp_timer_get_time() ^ 0xC0FFEEu);
     if (nvs == ESP_OK && stats_store_load()) {
         ESP_LOGI(TAG, "stats restored");
     } else {
@@ -285,6 +305,11 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(750));
 
     cat_init();
+    // Any poops he left before the reboot come back, freshly placed.
+    for (int i = stats_poop_count(); i > 0; i--) {
+        cat_spawn_poop();
+    }
+    stats_set_poop_count(cat_poop_count());
     power_note_activity();
 
     xTaskCreatePinnedToCore(cat_task, "cat", 6144, NULL, 5, NULL, 0);

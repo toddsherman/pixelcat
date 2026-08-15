@@ -8,3 +8,6 @@ tools/preview/cat_sprite_host.c
 __pycache__/
 main/wifi_secrets.h
 .DS_Store
+tools/test/game_test
+tools/test/cat_host.c
+tools/test/cat_sprite_host.c

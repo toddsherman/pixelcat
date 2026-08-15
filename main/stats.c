@@ -34,6 +34,18 @@
 #define EXER_PER_PX (100.0f / 3500.0f)
 #define EXER_PER_JUMP 2.0f
 
+// Play sessions score double exercise and extra hearts (the spec's words).
+#define PLAY_EXER_PER_HIT (2.0f * EXER_PER_JUMP)
+#define PLAY_AFFECT_PER_HIT 0.6f
+#define PLAY_ENERGY_PER_HIT 0.7f
+#define PLAY_HUNGER_PER_HIT 0.2f
+
+// A meal shows up again as a poop 2-4 h later; each one left visible has an
+// hourly affection price — he has standards.
+#define POOP_MIN_S (2.0f * 3600.0f)
+#define POOP_SPAN_S (2.0f * 3600.0f)
+#define POOP_AFFECT_PER_S (0.5f / 3600.0f)
+
 // Offline kindness caps: however long the absence, he wakes up hungry and a
 // touch distant — never starved, never a stranger.
 #define OFFLINE_HUNGER_FLOOR 10.0f
@@ -44,6 +56,22 @@
 static stats_t s_stats;
 static float s_pet_budget;
 static int32_t s_day_serial;  // 0 = unknown
+static float s_poop_due_s;    // >0 counting down, 0 none, -1 ready to spawn
+static int s_poop_count;
+static uint32_t s_rng = 0x2545F491u;
+
+static float srand01(void)
+{
+    s_rng ^= s_rng << 13;
+    s_rng ^= s_rng >> 17;
+    s_rng ^= s_rng << 5;
+    return (float)(s_rng >> 8) * (1.0f / 16777216.0f);
+}
+
+void stats_seed(uint32_t seed)
+{
+    s_rng = seed ? seed : 0x2545F491u;
+}
 
 static float clamp01_100(float v)
 {
@@ -59,6 +87,8 @@ void stats_reset(void)
     s_stats.exercise = 0.0f;
     s_pet_budget = PET_SESSION_BUDGET;
     s_day_serial = 0;
+    s_poop_due_s = 0.0f;
+    s_poop_count = 0;
 }
 
 const stats_t *stats_get(void)
@@ -73,7 +103,15 @@ void stats_tick(float dt, bool asleep, float purr)
     }
 
     s_stats.hunger -= dt * HUNGER_PER_S * (asleep ? HUNGER_SLEEP_FACTOR : 1.0f);
-    s_stats.affection -= dt * AFFECT_DECAY_PER_S * (asleep ? 0.5f : 1.0f);
+    s_stats.affection -= dt * (AFFECT_DECAY_PER_S * (asleep ? 0.5f : 1.0f) +
+                               (float)s_poop_count * POOP_AFFECT_PER_S);
+
+    if (s_poop_due_s > 0.0f) {
+        s_poop_due_s -= dt * (asleep ? 0.25f : 1.0f);
+        if (s_poop_due_s <= 0.0f) {
+            s_poop_due_s = -1.0f;  // ready: the engine will place it
+        }
+    }
 
     if (!asleep && purr > PET_PURR_MIN) {
         const float gain = purr * PET_GAIN_PER_S *
@@ -125,6 +163,40 @@ void stats_on_eat(float amount)
     s_stats.hunger = clamp01_100(s_stats.hunger + amount);
 }
 
+void stats_on_play_hit(void)
+{
+    s_stats.exercise = clamp01_100(s_stats.exercise + PLAY_EXER_PER_HIT);
+    s_stats.affection = clamp01_100(s_stats.affection + PLAY_AFFECT_PER_HIT);
+    s_stats.energy = clamp01_100(s_stats.energy - PLAY_ENERGY_PER_HIT);
+    s_stats.hunger = clamp01_100(s_stats.hunger - PLAY_HUNGER_PER_HIT);
+}
+
+void stats_note_fed(void)
+{
+    if (s_poop_due_s == 0.0f) {
+        s_poop_due_s = POOP_MIN_S + srand01() * POOP_SPAN_S;
+    }
+}
+
+bool stats_take_poop_ready(void)
+{
+    if (s_poop_due_s < 0.0f) {
+        s_poop_due_s = 0.0f;
+        return true;
+    }
+    return false;
+}
+
+void stats_set_poop_count(int n)
+{
+    s_poop_count = (n < 0) ? 0 : n;
+}
+
+int stats_poop_count(void)
+{
+    return s_poop_count;
+}
+
 void stats_note_date(int32_t day_serial)
 {
     if (day_serial <= 0) {
@@ -164,6 +236,13 @@ void stats_offline(double seconds)
 
     s_stats.energy = clamp01_100(s_stats.energy + sec * ENERGY_SLEEP_REGEN_PER_S);
 
+    if (s_poop_due_s > 0.0f) {
+        s_poop_due_s -= sec * 0.25f;
+        if (s_poop_due_s <= 0.0f) {
+            s_poop_due_s = -1.0f;
+        }
+    }
+
     s_pet_budget = PET_SESSION_BUDGET;
 }
 
@@ -177,7 +256,8 @@ void stats_offline(double seconds)
 #include "esp_log.h"
 #include "nvs.h"
 
-#define STATS_MAGIC 0x50435331u  // 'PCS1'
+#define STATS_MAGIC_V1 0x50435331u  // 'PCS1'
+#define STATS_MAGIC 0x50435332u     // 'PCS2': adds the poop fields
 
 typedef struct {
     uint32_t magic;
@@ -185,6 +265,16 @@ typedef struct {
     float pet_budget;
     int64_t saved_epoch;   // UTC seconds at save; 0 = clock was not valid
     int32_t day_serial;
+} stats_blob_v1_t;
+
+typedef struct {
+    uint32_t magic;
+    float hunger, affection, energy, exercise;
+    float pet_budget;
+    int64_t saved_epoch;
+    int32_t day_serial;
+    float poop_due_s;
+    int32_t poop_count;
 } stats_blob_t;
 
 static const char *TAG = "stats";
@@ -222,7 +312,12 @@ bool stats_store_load(void)
     size_t len = sizeof(b);
     const esp_err_t ret = nvs_get_blob(h, "stats", &b, &len);
     nvs_close(h);
-    if (ret != ESP_OK || len != sizeof(b) || b.magic != STATS_MAGIC) {
+    if (ret == ESP_OK && len == sizeof(stats_blob_v1_t) &&
+        b.magic == STATS_MAGIC_V1) {
+        b.magic = STATS_MAGIC;  // v1 cat, new fields at their defaults
+        b.poop_due_s = 0.0f;
+        b.poop_count = 0;
+    } else if (ret != ESP_OK || len != sizeof(b) || b.magic != STATS_MAGIC) {
         return false;
     }
 
@@ -233,6 +328,9 @@ bool stats_store_load(void)
     s_pet_budget = clamp01_100(b.pet_budget);
     s_day_serial = b.day_serial;
     s_loaded_epoch = b.saved_epoch;
+    s_poop_due_s = b.poop_due_s;
+    s_poop_count = (b.poop_count < 0) ? 0 : (b.poop_count > 3) ? 3
+                                                               : b.poop_count;
     ESP_LOGI(TAG, "loaded H %.0f A %.0f E %.0f X %.0f (saved epoch %lld)",
              (double)s_stats.hunger, (double)s_stats.affection,
              (double)s_stats.energy, (double)s_stats.exercise,
@@ -256,6 +354,8 @@ void stats_store_save(void)
         .pet_budget = s_pet_budget,
         .saved_epoch = clock_valid() ? (int64_t)time(NULL) : 0,
         .day_serial = s_day_serial,
+        .poop_due_s = s_poop_due_s,
+        .poop_count = s_poop_count,
     };
     nvs_handle_t h;
     if (nvs_open("pixelcat", NVS_READWRITE, &h) != ESP_OK) {

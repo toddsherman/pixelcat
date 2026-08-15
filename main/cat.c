@@ -572,6 +572,15 @@ bool cat_take_slurp(void) { return false; }
 bool cat_take_swipe(void) { return false; }
 int cat_take_dash(void) { return 0; }
 float cat_take_walked(void) { return 0.0f; }
+void cat_set_stats(int hunger, int affection, int energy, int exercise)
+{
+    (void)hunger; (void)affection; (void)energy; (void)exercise;
+}
+void cat_spawn_poop(void) {}
+int cat_poop_count(void) { return 0; }
+bool cat_take_eat(void) { return false; }
+bool cat_take_play_hit(void) { return false; }
+bool cat_take_poop_clean(void) { return false; }
 void cat_set_battery(int percent, bool charging) { (void)percent; (void)charging; }
 void cat_set_daypart(int variant) { (void)variant; }
 

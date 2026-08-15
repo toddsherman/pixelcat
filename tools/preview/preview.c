@@ -3,6 +3,8 @@
 //
 // Usage: preview [state] [seconds] > frame.ppm
 //   state: 0 idle, 1 petted, 2 startled, 3 sleeping
+//   10+n forced mode, 30+n night pose, 40+d daypart portrait
+//   50 bowl drop, 51 play session, 52 poop nearby, 53 status page
 //   seconds: how much animation time to advance before the shot
 
 #include <stdint.h>
@@ -37,12 +39,20 @@ int main(int argc, char **argv)
     const float seconds = (argc > 2) ? (float)atof(argv[2]) : 1.0f;
 
     cat_init();
+    // Stat values that light the fish (hungry) and show partial hearts.
+    cat_set_stats(35, 62, 80, 20);
+    cat_set_battery(72, false);
 
     // Drive the behaviour to the requested state with synthetic touches.
     cat_touch_t t = {0};
     const float dt = 1.0f / CAT_FPS;
 
-    if (want >= 40) {
+    if (want >= 50) {
+        cat_debug_force(want);
+        for (float el = 0; el < seconds; el += dt) {
+            cat_update(dt, &t, 0.0f, 0.0f);
+        }
+    } else if (want >= 40) {
         // want = 40 + daypart: portrait pose in that scene variant.
         cat_set_daypart(want - 40);
         cat_debug_force(0);

@@ -28,7 +28,16 @@ void stats_tick(float dt, bool asleep, float purr);
 void stats_on_walk(float logical_px);
 void stats_on_jump(void);         // any leap or big jump launch
 void stats_on_scare(void);        // the shake hiss
-void stats_on_eat(float amount);  // Phase 2: the fish bowl
+void stats_on_eat(float amount);  // finishing a bowl
+void stats_on_play_hit(void);     // one paw-bat or pounce in a play session
+
+// Poop: eating schedules one a few hours out; the engine spawns it when
+// ready. Visible poops cost affection hourly until cleaned.
+void stats_note_fed(void);
+bool stats_take_poop_ready(void);
+void stats_set_poop_count(int n);
+int stats_poop_count(void);
+void stats_seed(uint32_t seed);
 
 // Local calendar date as y*10000+m*100+d. Resets exercise when it changes.
 void stats_note_date(int32_t day_serial);

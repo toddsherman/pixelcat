@@ -58,6 +58,18 @@ int cat_take_dash(void);
 // Logical pixels walked/leapt since the last call — feeds the exercise stat.
 float cat_take_walked(void);
 
+// Current stat values pushed in for the HUD hearts and the status page.
+void cat_set_stats(int hunger, int affection, int energy, int exercise);
+
+// Drop a poop somewhere in the walked world (boot restore + due timer).
+void cat_spawn_poop(void);
+int cat_poop_count(void);
+
+// One-shot events out of the engine:
+bool cat_take_eat(void);        // he finished a bowl -> refill hunger
+bool cat_take_play_hit(void);   // one paw-bat or pounce landed
+bool cat_take_poop_clean(void); // a poop was tapped away
+
 cat_state_t cat_state(void);
 
 // Cumulative count of failed band flushes, for diagnostics.

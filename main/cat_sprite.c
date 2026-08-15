@@ -39,6 +39,8 @@ enum {
     C_BATT_B,
     C_BLACK,
     C_EYE,     // the cat's eyes: dark by day, glowing green at night
+    C_POOP,
+    C_UI_DIM,  // quiet HUD icons
     C_COUNT,
 };
 
@@ -59,6 +61,8 @@ static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_BATT_B] = {90, 170, 235},
     [C_BLACK] = {0, 0, 0},
     [C_EYE] = {44, 38, 48},
+    [C_POOP] = {124, 86, 55},
+    [C_UI_DIM] = {98, 98, 112},
 };
 
 #define SWAP16(v) ((uint16_t)((((v) >> 8) & 0xFF) | (((v) & 0xFF) << 8)))
@@ -96,6 +100,7 @@ static uint8_t char_color(char ch)
         case 'r': return C_HEART;
         case 'z': return C_SLEEP;
         case 'W': return C_WHITE;
+        case 'b': return C_POOP;
         default: return C_BG;
     }
 }
@@ -127,6 +132,55 @@ static const char *const ZED[] = {
     "zzz",
 };
 
+// World objects: the food bowl (salmon inside), the yarn ball, a poop, and
+// the little puff left behind when one is cleaned.
+static const char *const BOWL[] = {
+    ".#pppp#.",
+    "#ssssss#",
+    ".#ssss#.",
+    "..####..",
+};
+
+static const char *const BALL[] = {
+    ".####.",
+    "#rprp#",
+    "#prrr#",
+    "#rrpr#",
+    "#prpr#",
+    ".####.",
+};
+
+static const char *const POOP_ART[] = {
+    "..b...",
+    ".bbb..",
+    ".bbbb.",
+    "bbbbbb",
+};
+
+static const char *const POOF[] = {
+    "W.W.W",
+    ".W.W.",
+    "W.W.W",
+};
+
+// HUD icons, top-left: yarn ball (play) and fish (feed).
+static const char *const ICON_BALL[] = {
+    ".####.",
+    "#rprp#",
+    "#prrr#",
+    "#rrpr#",
+    "#prpr#",
+    ".####.",
+};
+
+static const char *const ICON_FISH[] = {
+    "..####..#",
+    ".#zzzz##z",
+    "#zWzzzzzz",
+    ".#zzzz##z",
+    "..####..#",
+};
+
 // Small overlay sprites are stamped unflipped with their own widths.
 static void stamp_fx(int x0, int y0, const char *const *rows, int nrows)
 {
@@ -156,6 +210,8 @@ typedef enum {
     M_BIG_JUMP,   // row 9: tap on the cat
     M_ANGRY,      // row 10: shaken
     M_PET,        // rubbed: purr + hearts (portrait pose)
+    M_EAT,        // at the bowl (clean-paw frames, slurping)
+    M_PLAY_PAW,   // batting the yarn ball (pawing frames)
     M_MODE_COUNT,
 } mode_t;
 
@@ -178,6 +234,8 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
     [M_BIG_JUMP] = {ANIM_BIG_JUMP, ANIM_BIG_JUMP_N, 12.0f, false},
     [M_ANGRY] = {ANIM_ANGRY, ANIM_ANGRY_N, 9.0f, true},
     [M_PET] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 5.5f, true},
+    [M_EAT] = {ANIM_CLEAN_PAW, ANIM_CLEAN_PAW_N, 5.0f, true},
+    [M_PLAY_PAW] = {ANIM_PAWING, ANIM_PAWING_N, 7.0f, true},
 };
 
 // Behaviour tuning.
@@ -239,7 +297,24 @@ static struct {
     int batt_pct;        // -1 until the first reading arrives
     bool batt_chg;
     bool batt_screen;    // full-screen battery view (tap the corner bar)
+    bool status_screen;  // full-screen stat page (tap the hearts)
     int daypart;         // BG_* variant index chosen by the clock
+
+    // World objects and sessions (Phase 2).
+    bool bowl_alive, bowl_fresh;
+    float bowl_x, bowl_ttl;
+    bool ball_alive;
+    float ball_x, ball_vx;
+    float play_left;     // seconds remaining in the play session
+    float poop_x[3];
+    bool poop_live[3];
+    float poof_x, poof_t;
+    float notice;        // reaction delay before he heads for a new drop
+    int goal_kind;       // 0 none, 1 bowl, 2 ball
+    float goal_stop;     // world x he trots toward
+    bool eat_evt, play_evt, clean_evt;
+    int st_h, st_a, st_e, st_x;  // stats pushed in for HUD + status page
+
     uint32_t rng;
 } s;
 
@@ -281,15 +356,15 @@ static bool touch_near_cat(float cx, float cy)
            cy > FLOOR_Y - 24.0f && cy < FLOOR_Y + 8.0f;
 }
 
-// The passive pool: sheet rows 1, 2, 3, 4 and 8.
+// The passive pool: sheet rows 1, 2, 3 and 4. Pawing left the rotation when
+// it became a play move — it only appears batting the yarn ball now.
 static mode_t random_passive(void)
 {
     const float r = frand01();
-    if (r < 0.30f) return M_PORTRAIT;
-    if (r < 0.55f) return M_PROFILE;
-    if (r < 0.72f) return M_CLEAN_PAW;
-    if (r < 0.87f) return M_CLEAN_EAR;
-    return M_PAWING;
+    if (r < 0.34f) return M_PORTRAIT;
+    if (r < 0.62f) return M_PROFILE;
+    if (r < 0.82f) return M_CLEAN_PAW;
+    return M_CLEAN_EAR;
 }
 
 
@@ -308,6 +383,91 @@ static void start_wander(void)
     s.wandering = true;
     s.facing_left = s.move_dir < 0;
     enter(M_TROT);
+}
+
+// ---------------------------------------------------------------------------
+// World objects: positions live in the looping world, like the cat.
+// ---------------------------------------------------------------------------
+
+static float wrapf(float x)
+{
+    x = fmodf(x, (float)BG_WORLD_W);
+    return (x < 0.0f) ? x + (float)BG_WORLD_W : x;
+}
+
+// Shortest signed distance from one world x to another.
+static float world_delta(float from, float to)
+{
+    float d = fmodf(to - from, (float)BG_WORLD_W);
+    if (d < -(float)BG_WORLD_W * 0.5f) d += (float)BG_WORLD_W;
+    if (d > (float)BG_WORLD_W * 0.5f) d -= (float)BG_WORLD_W;
+    return d;
+}
+
+// Canvas cell of a world x (object centres), given the cat pinned at CENTRE.
+static int obj_canvas_x(float wx)
+{
+    return (int)(CENTRE + world_delta(s.world_x, wx) / PIX_SCALE + 0.5f);
+}
+
+static void drop_bowl(void)
+{
+    if (s.bowl_alive) {
+        return;  // one bowl at a time
+    }
+    const float dir = s.facing_left ? -1.0f : 1.0f;
+    s.bowl_x = wrapf(s.world_x + dir * 13.0f * PIX_SCALE);
+    s.bowl_alive = true;
+    s.bowl_fresh = true;
+    s.bowl_ttl = 90.0f;
+    s.notice = 0.9f;
+}
+
+static void drop_ball(void)
+{
+    if (s.ball_alive) {
+        return;
+    }
+    const float dir = s.facing_left ? -1.0f : 1.0f;
+    s.ball_x = wrapf(s.world_x + dir * 12.0f * PIX_SCALE);
+    s.ball_vx = 0.0f;
+    s.ball_alive = true;
+    s.play_left = 60.0f;
+    s.notice = 0.7f;
+}
+
+// Trot toward the bowl or ball, stopping with it at his face.
+static void goal_arrive(void);
+
+static void start_goal(int kind)
+{
+    const float obj = (kind == 1) ? s.bowl_x : s.ball_x;
+    const float d = world_delta(s.world_x, obj);
+    const int dir = (d < 0.0f) ? -1 : 1;
+    const float off = (dir > 0) ? (SPRITE_W - 1.0f) * PIX_SCALE
+                                : -4.0f * PIX_SCALE;
+    s.goal_kind = kind;
+    s.goal_stop = wrapf(obj - off);
+    s.facing_left = d < 0.0f;
+    s.wandering = false;
+    s.tilt_walk = false;
+    s.tilt_leap = false;
+    const float d2 = world_delta(s.world_x, s.goal_stop);
+    if (fabsf(d2) < 4.0f) {
+        goal_arrive();
+        return;
+    }
+    s.move_dir = (d2 < 0.0f) ? -1 : 1;
+    enter(M_TROT);
+}
+
+static void goal_arrive(void)
+{
+    const int kind = s.goal_kind;
+    s.goal_kind = 0;
+    const float obj = (kind == 1) ? s.bowl_x : s.ball_x;
+    s.facing_left = world_delta(s.world_x, obj) < 0.0f;
+    enter((kind == 1) ? M_EAT : M_PLAY_PAW);
 }
 
 // The same grade curves gen_bg.py bakes into the scene, applied to the
@@ -345,7 +505,8 @@ static void grade_rgb(int variant, int r, int g, int b, int *ro, int *go, int *b
 static bool palette_ungraded(int idx)
 {
     return idx == C_BATT_G || idx == C_BATT_Y || idx == C_BATT_R ||
-           idx == C_BATT_B || idx == C_BLACK || idx == C_WHITE;
+           idx == C_BATT_B || idx == C_BLACK || idx == C_WHITE ||
+           idx == C_UI_DIM;
 }
 
 void cat_init(void)
@@ -356,6 +517,7 @@ void cat_init(void)
     s.pos_x = CENTRE;
     s.facing_left = true;
     s.batt_pct = -1;
+    s.st_h = s.st_a = s.st_e = s.st_x = 100;  // until main pushes real values
     s.rng = 0x9E3779B9;
 
     for (int v = 0; v < BG_VARIANTS; v++) {
@@ -419,14 +581,15 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const int side_of = (s.last_x < RUN_ZONE_L) ? -1 : (s.last_x > RUN_ZONE_R) ? 1 : 0;
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
 
-    // The battery view swallows all interaction: one tap toggles back out.
+    // The battery and status views swallow all interaction: one tap exits.
     const bool tap_on_batt = released_tap && s.last_x >= CANVAS_W - 15.0f &&
                              s.last_y <= 6.0f;
-    if (s.batt_screen) {
+    if (s.batt_screen || s.status_screen) {
         if (released_tap) {
             s.batt_screen = false;
+            s.status_screen = false;
         }
-        // Let any purr fade out while the gauge is up.
+        // Let any purr fade out while a gauge is up.
         s.purr = fmaxf(0.0f, s.purr - PET_RAMP_DOWN * dt);
         s.was_down = touch->down;
         return;
@@ -437,6 +600,53 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         return;
     }
 
+    // HUD icon row (top-left): ball, fish, hearts. Icon hit-boxes outrank
+    // every world gesture, same as the battery corner.
+    bool tap_claimed = false;
+    if (released_tap && s.last_y < 8.0f && s.last_x < 40.0f) {
+        if (s.last_x >= 20.0f) {
+            s.status_screen = true;
+            s.was_down = touch->down;
+            return;
+        }
+        if (s.last_x >= 9.0f) {
+            drop_bowl();
+        } else {
+            drop_ball();
+        }
+        tap_claimed = true;
+    }
+
+    // A tap on a poop cleans it: puff, swipe sound, one less indignity.
+    if (released_tap && !tap_claimed) {
+        for (int i = 0; i < 3; i++) {
+            if (!s.poop_live[i]) {
+                continue;
+            }
+            const float cxp = CENTRE + world_delta(s.world_x, s.poop_x[i]) /
+                                           PIX_SCALE;
+            if (s.last_x >= cxp - 5.0f && s.last_x <= cxp + 5.0f &&
+                s.last_y > FLOOR_Y - 10.0f) {
+                s.poop_live[i] = false;
+                s.clean_evt = true;
+                s.swipe = true;
+                s.poof_x = s.poop_x[i];
+                s.poof_t = 0.5f;
+                tap_claimed = true;
+                break;
+            }
+        }
+    }
+
+    // Meals and play sessions hold his attention: no dozing off, and tilt or
+    // side taps cannot yank him away from the bowl or the ball.
+    const bool busy = s.goal_kind != 0 || s.mode == M_EAT ||
+                      s.mode == M_PLAY_PAW || s.play_left > 0.0f ||
+                      (s.bowl_alive && s.bowl_fresh);
+    if (busy) {
+        s.since_touch = 0.0f;
+    }
+
     const bool interruptible = s.mode != M_LEAP && s.mode != M_BIG_JUMP;
 
     const int tilt_dir = (tilt < 0) ? -1 : 1;
@@ -445,7 +655,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         s.since_touch = 0.0f;
     }
     const bool tilt_ok = interruptible && s.mode != M_ANGRY && s.mode != M_PET &&
-                         s.mode != M_SLEEP;
+                         s.mode != M_SLEEP && !busy;
     if (tilt_ok && tilt_mag > TILT_LEAP_ON && s.mode != M_LEAP) {
         // Steep tilt: bound that way in chained leaps.
         s.move_dir = tilt_dir;
@@ -469,18 +679,19 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         enter(M_ANGRY);
         s.hiss = true;
     } else if (interruptible && s.mode != M_ANGRY) {
-        if (stroking && s.mode != M_PET) {
+        if (stroking && s.mode != M_PET && s.mode != M_EAT) {
             if (s.mode == M_SLEEP) {
                 s.chirp = true;
             }
             enter(M_PET);
-        } else if (tap_on_cat) {
+        } else if (tap_on_cat && !tap_claimed && !busy) {
+            // A tap earns a glance and a tail flick; jumping is a play move.
             if (s.mode == M_SLEEP) {
                 s.chirp = true;
             }
-            enter(M_BIG_JUMP);
-            s.boing = true;
-        } else if (tap_on_side && s.mode != M_PET) {
+            enter(M_PORTRAIT);
+            s.decide_in = 1.5f;
+        } else if (tap_on_side && !tap_claimed && !busy && s.mode != M_PET) {
             if (s.tap_side == side_of) {
                 // Second tap on the same side: leap that way.
                 s.move_dir = side_of;
@@ -510,6 +721,18 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             break;
 
         case M_TROT:
+            if (s.goal_kind) {
+                const float d = world_delta(s.world_x, s.goal_stop);
+                const float step = TROT_SPEED * PIX_SCALE * dt;
+                if (fabsf(d) <= step) {
+                    s.world_x = s.goal_stop;
+                    goal_arrive();
+                } else {
+                    s.world_x += (d < 0.0f) ? -step : step;
+                    s.walked += step;
+                }
+                break;
+            }
             if (s.tilt_walk) {
                 if (tilt_mag < TILT_WALK_OFF) {
                     s.tilt_walk = false;
@@ -586,10 +809,58 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             }
             break;
 
+        case M_EAT:
+            if (!s.bowl_alive) {
+                to_passive();
+                break;
+            }
+            if (s.t > 6.5f) {
+                // Bowl finished: the hunger refill fires through main.
+                s.bowl_alive = false;
+                s.bowl_fresh = false;
+                s.eat_evt = true;
+                to_passive();
+            }
+            break;
+
+        case M_PLAY_PAW: {
+            if (!s.ball_alive) {
+                to_passive();
+                break;
+            }
+            const float dobj = world_delta(s.world_x, s.ball_x);
+            if (fabsf(dobj) > 22.0f * PIX_SCALE) {
+                start_goal(2);  // it rolled away — chase
+                break;
+            }
+            if (s.t > 1.4f) {
+                const float r = frand01();
+                if (r < 0.35f) {
+                    // Pounce! The only place the big jump lives now.
+                    s.boing = true;
+                    s.play_evt = true;
+                    enter(M_BIG_JUMP);
+                } else if (fabsf(dobj) > 6.0f * PIX_SCALE) {
+                    start_goal(2);
+                } else {
+                    s.t = 0.0f;  // keep batting
+                }
+            }
+            break;
+        }
+
         case M_SLEEP:
             break;  // woken only by the triggers above
 
         default:  // passive pool
+            if (s.bowl_alive && s.bowl_fresh && s.notice <= 0.0f) {
+                start_goal(1);
+                break;
+            }
+            if (s.ball_alive && s.notice <= 0.0f) {
+                start_goal(2);
+                break;
+            }
             if (s.since_touch > SLEEP_AFTER_S) {
                 enter(M_SLEEP);
                 break;
@@ -603,6 +874,42 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 }
             }
             break;
+    }
+
+    // --- world object upkeep ---
+    if (s.notice > 0.0f) {
+        s.notice -= dt;
+    }
+    if (s.bowl_alive) {
+        s.bowl_ttl -= dt;
+        if (s.bowl_ttl <= 0.0f) {
+            // Untouched long enough: the bowl despawns.
+            s.bowl_alive = false;
+            s.bowl_fresh = false;
+            if (s.goal_kind == 1) {
+                s.goal_kind = 0;
+                to_passive();
+            }
+        }
+    }
+    if (s.ball_alive) {
+        s.ball_x = wrapf(s.ball_x + s.ball_vx * dt);
+        s.ball_vx -= s.ball_vx * 3.0f * dt;
+        s.play_left -= dt;
+        if (s.play_left <= 0.0f) {
+            s.ball_alive = false;
+            s.play_left = 0.0f;
+            if (s.goal_kind == 2) {
+                s.goal_kind = 0;
+            }
+            if (s.mode == M_PLAY_PAW || (s.mode == M_TROT && !s.tilt_walk &&
+                                         !s.wandering)) {
+                to_passive();
+            }
+        }
+    }
+    if (s.poof_t > 0.0f) {
+        s.poof_t -= dt;
     }
 
     // --- purr chases petting ---
@@ -654,11 +961,23 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         if (s.mode == M_TROT && (frame == 1 || frame == 5)) {
             s.step = true;
         }
-        if ((s.mode == M_CLEAN_PAW || s.mode == M_CLEAN_EAR) && frame == 1) {
+        if ((s.mode == M_CLEAN_PAW || s.mode == M_CLEAN_EAR ||
+             s.mode == M_EAT) && frame == 1) {
             s.slurp = true;
         }
         if (s.mode == M_PAWING && frame == 2) {
             s.swipe = true;
+        }
+        if (s.mode == M_PLAY_PAW && frame == 2) {
+            // A bat connects: score it and send the ball rolling, usually
+            // forward, sometimes squirting back through his legs.
+            s.swipe = true;
+            s.play_evt = true;
+            float dir = s.facing_left ? -1.0f : 1.0f;
+            if (frand01() < 0.2f) {
+                dir = -dir;
+            }
+            s.ball_vx = dir * (40.0f + 60.0f * frand01());
         }
         s.prev_frame = frame;
     }
@@ -711,6 +1030,57 @@ float cat_take_walked(void)
     return v;
 }
 
+void cat_set_stats(int hunger, int affection, int energy, int exercise)
+{
+    s.st_h = hunger;
+    s.st_a = affection;
+    s.st_e = energy;
+    s.st_x = exercise;
+}
+
+void cat_spawn_poop(void)
+{
+    for (int i = 0; i < 3; i++) {
+        if (!s.poop_live[i]) {
+            const float sign = (frand01() < 0.5f) ? -1.0f : 1.0f;
+            s.poop_x[i] = wrapf(s.world_x + sign *
+                                (150.0f + frand01() * 750.0f));
+            s.poop_live[i] = true;
+            return;
+        }
+    }
+}
+
+int cat_poop_count(void)
+{
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+        n += s.poop_live[i] ? 1 : 0;
+    }
+    return n;
+}
+
+bool cat_take_eat(void)
+{
+    const bool v = s.eat_evt;
+    s.eat_evt = false;
+    return v;
+}
+
+bool cat_take_play_hit(void)
+{
+    const bool v = s.play_evt;
+    s.play_evt = false;
+    return v;
+}
+
+bool cat_take_poop_clean(void)
+{
+    const bool v = s.clean_evt;
+    s.clean_evt = false;
+    return v;
+}
+
 void cat_set_battery(int percent, bool charging)
 {
     s.batt_pct = percent;
@@ -755,7 +1125,17 @@ cat_state_t cat_state(void)
 
 void cat_debug_force(int mode)
 {
-    if (mode >= 0 && mode < M_MODE_COUNT) {
+    // 50+: scene setups for the host preview (harmless on hardware).
+    if (mode == 50) {
+        drop_bowl();
+    } else if (mode == 51) {
+        drop_ball();
+    } else if (mode == 52) {
+        s.poop_x[0] = wrapf(s.world_x - 5.0f * PIX_SCALE);
+        s.poop_live[0] = true;
+    } else if (mode == 53) {
+        s.status_screen = true;
+    } else if (mode >= 0 && mode < M_MODE_COUNT) {
         enter((mode_t)mode);
         s.wandering = false;
         s.since_touch = 0.0f;
@@ -766,10 +1146,71 @@ void cat_debug_force(int mode)
 // Composition + rendering
 // ---------------------------------------------------------------------------
 
+// Icons stamp in their own colours when lit, uniform grey when quiet.
+static void stamp_icon(int x0, int y0, const char *const *rows, int nrows,
+                       bool bright)
+{
+    for (int y = 0; y < nrows; y++) {
+        const char *row = rows[y];
+        for (int x = 0; row[x]; x++) {
+            if (row[x] != '.') {
+                px(x0 + x, y0 + y, bright ? char_color(row[x]) : C_UI_DIM);
+            }
+        }
+    }
+}
+
+// One HUD heart: 2 = full, 1 = half, 0 = empty outline.
+static void draw_heart_icon(int x0, int y0, int level)
+{
+    for (int y = 0; y < 4; y++) {
+        const char *row = HEART[y];
+        for (int x = 0; x < 5; x++) {
+            if (row[x] == 'r') {
+                const bool lit = (level == 2) || (level == 1 && x < 3);
+                px(x0 + x, y0 + y, lit ? C_HEART : C_UI_DIM);
+            }
+        }
+    }
+}
+
+static int min4(int a, int b, int c, int d)
+{
+    int m = a < b ? a : b;
+    m = m < c ? m : c;
+    return m < d ? m : d;
+}
+
 static void compose(void)
 {
     // Index 0 = transparent: the painted scene shows through.
     memset(s_canvas, 0, sizeof(s_canvas));
+
+    // World objects sit on the path, behind the cat.
+    for (int i = 0; i < 3; i++) {
+        if (s.poop_live[i]) {
+            const int cx = obj_canvas_x(s.poop_x[i]);
+            if (cx > -6 && cx < CANVAS_W + 6) {
+                stamp_fx(cx - 3, FLOOR_Y - 3, POOP_ART, 4);
+            }
+        }
+    }
+    if (s.bowl_alive) {
+        const int cx = obj_canvas_x(s.bowl_x);
+        if (cx > -8 && cx < CANVAS_W + 8) {
+            stamp_fx(cx - 4, FLOOR_Y - 3, BOWL, 4);
+        }
+    }
+    if (s.ball_alive) {
+        const int cx = obj_canvas_x(s.ball_x);
+        if (cx > -6 && cx < CANVAS_W + 6) {
+            stamp_fx(cx - 3, FLOOR_Y - 5, BALL, 6);
+        }
+    }
+    if (s.poof_t > 0.0f) {
+        const int cx = obj_canvas_x(s.poof_x);
+        stamp_fx(cx - 2, FLOOR_Y - 6, POOF, 3);
+    }
 
     const anim_desc_t *a = &k_anim[s.mode];
     const cat_frame_t *f = &a->frames[anim_frame()];
@@ -787,6 +1228,19 @@ static void compose(void)
         if (s.hearts[i].alive) {
             stamp_fx((int)s.hearts[i].x - 2, (int)s.hearts[i].y - 2, HEART, 4);
         }
+    }
+
+    // HUD, top-left: yarn ball, fish, three hearts. Quiet grey by default;
+    // an icon brightens as an invitation when its stat wants attention.
+    stamp_icon(2, 1, ICON_BALL, 6, s.ball_alive || s.st_x < 35);
+    stamp_icon(10, 2, ICON_FISH, 5,
+               (s.bowl_alive && s.bowl_fresh) || s.st_h < 40);
+    const int worst = min4(s.st_h, s.st_a, s.st_e, s.st_x);
+    const int halves = (worst * 6 + 50) / 100;
+    for (int i = 0; i < 3; i++) {
+        int lvl = halves - 2 * i;
+        lvl = (lvl < 0) ? 0 : (lvl > 2) ? 2 : lvl;
+        draw_heart_icon(21 + i * 6, 2, lvl);
     }
 
     // Tiny battery bar, top right: a plain closed 8x3 rectangle, 6 fill cells.
@@ -817,8 +1271,11 @@ static void compose(void)
 // Full-screen battery view: black screen, a large gauge, percent below.
 // ---------------------------------------------------------------------------
 
-// 3x5 digit font, rows top to bottom, bit 2 = left pixel.
-static const uint8_t k_font[11][5] = {
+// 3x5 font, rows top to bottom, bit 2 = left pixel. Digits, %, then the
+// letters the status page needs.
+enum { GL_PCT = 10, GL_H, GL_A, GL_E, GL_X, GL_B, GL_P };
+
+static const uint8_t k_font[17][5] = {
     {7, 5, 5, 5, 7},  // 0
     {2, 6, 2, 2, 7},  // 1
     {7, 1, 7, 4, 7},  // 2
@@ -830,6 +1287,12 @@ static const uint8_t k_font[11][5] = {
     {7, 5, 7, 5, 7},  // 8
     {7, 5, 7, 1, 7},  // 9
     {5, 1, 2, 4, 5},  // %
+    {5, 5, 7, 5, 5},  // H
+    {2, 5, 7, 5, 5},  // A
+    {7, 4, 6, 4, 7},  // E
+    {5, 5, 2, 5, 5},  // X
+    {6, 5, 6, 5, 6},  // B
+    {6, 5, 6, 4, 4},  // P
 };
 
 static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
@@ -841,6 +1304,72 @@ static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
             }
         }
     }
+}
+
+static int draw_number(int x, int y, int v, uint8_t col)  // returns next x
+{
+    int g[3], n = 0;
+    if (v >= 100) {
+        g[n++] = v / 100;
+    }
+    if (v >= 10) {
+        g[n++] = (v / 10) % 10;
+    }
+    g[n++] = v % 10;
+    for (int i = 0; i < n; i++) {
+        draw_glyph(x, y, g[i], col);
+        x += 4;
+    }
+    return x;
+}
+
+// Full-screen status page (tap the hearts): four labelled stat bars, then
+// battery and the outstanding poop count along the bottom.
+static void compose_status(void)
+{
+    memset(s_canvas, C_BLACK, sizeof(s_canvas));
+
+    const struct {
+        int glyph;
+        int val;
+    } rows[4] = {
+        {GL_H, s.st_h}, {GL_A, s.st_a}, {GL_E, s.st_e}, {GL_X, s.st_x},
+    };
+
+    const int bx = 8, bw = 34;
+    for (int i = 0; i < 4; i++) {
+        const int by = 3 + i * 8;
+        const int val = (rows[i].val < 0) ? 0 : rows[i].val;
+        draw_glyph(3, by + 1, rows[i].glyph, C_WHITE);
+        for (int x = 0; x < bw; x++) {
+            px(bx + x, by, C_WHITE);
+            px(bx + x, by + 6, C_WHITE);
+        }
+        for (int y = 1; y < 6; y++) {
+            px(bx, by + y, C_WHITE);
+            px(bx + bw - 1, by + y, C_WHITE);
+        }
+        const uint8_t col = (val > 50) ? C_BATT_G
+                            : (val > 25) ? C_BATT_Y
+                                         : C_BATT_R;
+        const int fill = (val * (bw - 2) + 50) / 100;
+        for (int y = 1; y < 6; y++) {
+            for (int x = 0; x < fill; x++) {
+                px(bx + 1 + x, by + y, col);
+            }
+        }
+        draw_number(bx + bw + 2, by + 1, val, C_WHITE);
+    }
+
+    // Bottom line: battery left, poops right.
+    const int by = 38;
+    draw_glyph(4, by, GL_B, C_WHITE);
+    if (s.batt_pct >= 0) {
+        const int nx = draw_number(9, by, s.batt_pct, C_WHITE);
+        draw_glyph(nx, by, GL_PCT, C_WHITE);
+    }
+    draw_glyph(38, by, GL_P, C_WHITE);
+    draw_number(43, by, cat_poop_count(), C_WHITE);
 }
 
 static void compose_battery(void)
@@ -901,6 +1430,8 @@ void cat_render(void)
 {
     if (s.batt_screen) {
         compose_battery();
+    } else if (s.status_screen) {
+        compose_status();
     } else {
         compose();
     }
@@ -923,7 +1454,9 @@ void cat_render(void)
             // fixes the logical x cell; walking panel columns descends the
             // logical y cells (panel x = 367 maps to logical y = 0).
             const int lx_cell = (y0 + row) / PIX_SCALE;
-            const uint16_t *pal = s_pal565[s.batt_screen ? BG_DAY : s.daypart];
+            const uint16_t *pal = s_pal565[(s.batt_screen || s.status_screen)
+                                               ? BG_DAY
+                                               : s.daypart];
             for (int pxb = 0; pxb < LCD_H_RES / PIX_SCALE; pxb++) {
                 const int ly_cell = (LCD_H_RES / PIX_SCALE - 1) - pxb;
                 const uint8_t ci = s_canvas[ly_cell * CANVAS_W + lx_cell];
