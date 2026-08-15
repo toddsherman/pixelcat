@@ -102,6 +102,7 @@ static uint8_t char_color(char ch)
         case 'z': return C_SLEEP;
         case 'W': return C_WHITE;
         case 'b': return C_POOP;
+        case 'g': return C_BATT_G;
         default: return C_BG;
     }
 }
@@ -164,14 +165,15 @@ static const char *const POOF[] = {
     "W.W.W",
 };
 
-// HUD icons, top-left: yarn ball (play), fish (feed), heart (status). All
-// three are 5 cells tall and sit on the same top line.
+// HUD icons, top-left: yarn ball (play), fish (food), heart (affection),
+// dumbbell (exercise). All 5 cells tall on the same top line; each renders
+// as a gauge — grey art filled bottom-up with its true colours.
 static const char *const ICON_BALL[] = {
     ".###.",
     "#rrW#",
     "#rWr#",
     "#Wrr#",
-    ".###.",
+    ".rrr.",
 };
 
 static const char *const ICON_FISH[] = {
@@ -179,7 +181,7 @@ static const char *const ICON_FISH[] = {
     ".#zzzz##z",
     "#zWzzzzzz",
     ".#zzzz##z",
-    "..####..#",
+    "..zzzz..z",
 };
 
 static const char *const ICON_HEART[] = {
@@ -188,6 +190,14 @@ static const char *const ICON_HEART[] = {
     "rrrrr",
     ".rrr.",
     "..r..",
+};
+
+static const char *const ICON_EXER[] = {
+    ".g...g.",
+    "gg...gg",
+    "g#####g",
+    "gg...gg",
+    ".g...g.",
 };
 
 // Small overlay sprites are stamped unflipped with their own widths.
@@ -335,7 +345,7 @@ static struct {
     int goal_kind;       // 0 none, 1 bowl, 2 ball
     float goal_stop;     // world x he trots toward
     bool eat_evt, play_evt, clean_evt;
-    int st_f, st_a, st_x;  // stats pushed in for HUD + status page
+    int st_f, st_a, st_x, st_p;  // stats pushed in for HUD + status page
 
     // Camera and trust (Phase 3). Normally the camera is pinned to the cat;
     // absence, fleeing and hiding set it free.
@@ -638,7 +648,7 @@ void cat_init(void)
     s.pos_x = CENTRE;
     s.facing_left = true;
     s.batt_pct = -1;
-    s.st_f = s.st_a = s.st_x = 100;  // until main pushes real values
+    s.st_f = s.st_a = s.st_x = s.st_p = 100;  // until main pushes values
     s.rng = 0x9E3779B9;
     s.entice = -1;
     // Every boot is a wake: the park starts empty until something calls him.
@@ -714,7 +724,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
 
     // The battery and status views swallow all interaction: one tap exits.
-    const bool tap_on_batt = released_tap && s.last_x >= 43.0f &&
+    const bool tap_on_batt = released_tap && s.last_x >= 41.0f &&
                              s.last_y <= 9.0f;
     if (s.batt_screen || s.status_screen) {
         if (released_tap) {
@@ -732,19 +742,27 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         return;
     }
 
-    // HUD icon row (top-left): ball, fish, hearts. Icon hit-boxes outrank
-    // every world gesture, same as the battery corner.
+    // HUD gauge row (top-left): ball, fish, heart, dumbbell. Hit-boxes
+    // outrank every world gesture, same as the battery corner. A full
+    // gauge means its tap does nothing: no dinner for a fed cat, no new
+    // ball once he has had his games.
     bool tap_claimed = false;
-    if (released_tap && s.last_y < 9.0f && s.last_x < 43.0f) {
-        if (s.last_x >= 19.0f) {
+    if (released_tap && s.last_y < 9.0f && s.last_x < 41.0f) {
+        if (s.last_x >= 26.0f) {
+            // The dumbbell is a pure gauge; the tap just doesn't fall
+            // through to the world.
+        } else if (s.last_x >= 19.0f) {
             s.status_screen = true;
             s.was_down = touch->down;
             return;
-        }
-        if (s.last_x >= 9.0f) {
-            drop_bowl();
+        } else if (s.last_x >= 9.0f) {
+            if (s.st_f < 95) {
+                drop_bowl();
+            }
         } else {
-            drop_ball();
+            if (s.st_p < 95) {
+                drop_ball();
+            }
         }
         tap_claimed = true;
     }
@@ -1324,11 +1342,12 @@ float cat_take_walked(void)
     return v;
 }
 
-void cat_set_stats(int food, int affection, int exercise)
+void cat_set_stats(int food, int affection, int exercise, int play)
 {
     s.st_f = food;
     s.st_a = affection;
     s.st_x = exercise;
+    s.st_p = play;
 }
 
 void cat_spawn_poop(void)
@@ -1519,38 +1538,22 @@ void cat_debug_force(int mode)
 // Composition + rendering
 // ---------------------------------------------------------------------------
 
-// Icons stamp in their own colours when lit, uniform grey when quiet.
-static void stamp_icon(int x0, int y0, const char *const *rows, int nrows,
-                       bool bright)
+// An icon as a vertical gauge: the art exists in quiet grey, and the bottom
+// rows light up in their true colours as the value rises.
+static void stamp_gauge(int x0, int y0, const char *const *rows, int nrows,
+                        int value)
 {
+    const int lit_rows = ((value < 0 ? 0 : value > 100 ? 100 : value) *
+                              nrows + 50) / 100;
     for (int y = 0; y < nrows; y++) {
         const char *row = rows[y];
+        const bool lit = (nrows - 1 - y) < lit_rows;
         for (int x = 0; row[x]; x++) {
             if (row[x] != '.') {
-                px(x0 + x, y0 + y, bright ? char_color(row[x]) : C_UI_DIM);
+                px(x0 + x, y0 + y, lit ? char_color(row[x]) : C_UI_DIM);
             }
         }
     }
-}
-
-// One HUD heart: 2 = full, 1 = half, 0 = empty outline.
-static void draw_heart_icon(int x0, int y0, int level)
-{
-    for (int y = 0; y < 5; y++) {
-        const char *row = ICON_HEART[y];
-        for (int x = 0; x < 5; x++) {
-            if (row[x] == 'r') {
-                const bool lit = (level == 2) || (level == 1 && x < 3);
-                px(x0 + x, y0 + y, lit ? C_HEART : C_UI_DIM);
-            }
-        }
-    }
-}
-
-static int min3(int a, int b, int c)
-{
-    const int m = a < b ? a : b;
-    return m < c ? m : c;
 }
 
 static void compose(void)
@@ -1604,25 +1607,18 @@ static void compose(void)
         }
     }
 
-    // HUD, top-left: yarn ball, fish, three hearts — all 5 cells tall, all
-    // 2 cells below the top edge, clear of the left edge. Quiet grey by
-    // default; an icon brightens as an invitation when its stat wants
-    // attention.
-    stamp_icon(3, 2, ICON_BALL, 5, s.ball_alive || s.st_x < 35);
-    stamp_icon(10, 2, ICON_FISH, 5,
-               (s.bowl_alive && s.bowl_fresh) || s.st_f < 40);
-    const int worst = min3(s.st_f, s.st_a, s.st_x);
-    const int halves = (worst * 6 + 50) / 100;
-    for (int i = 0; i < 3; i++) {
-        int lvl = halves - 2 * i;
-        lvl = (lvl < 0) ? 0 : (lvl > 2) ? 2 : lvl;
-        draw_heart_icon(21 + i * 6, 2, lvl);
-    }
+    // HUD, top-left: four gauges — yarn ball (play), fish (food), heart
+    // (affection), dumbbell (exercise) — all 5 cells tall, all 2 cells
+    // below the top edge. Each fills bottom-up with its stat.
+    stamp_gauge(3, 2, ICON_BALL, 5, s.st_p);
+    stamp_gauge(10, 2, ICON_FISH, 5, s.st_f);
+    stamp_gauge(21, 2, ICON_HEART, 5, s.st_a);
+    stamp_gauge(28, 2, ICON_EXER, 5, s.st_x);
 
     // Battery, top right, on the same line at the same height: a closed
     // 9x5 rectangle with 7 fill cells.
     if (s.batt_pct >= 0) {
-        const int bx = 45, by = 2;
+        const int bx = 43, by = 2;
         for (int x = 0; x < 9; x++) {
             px(bx + x, by, C_OUT);
             px(bx + x, by + 4, C_OUT);

@@ -19,12 +19,14 @@ exercise bar IS his tiredness: pleasantly worn out, slower, loafing longer,
 napping earlier, and fresh again when it resets with the new day. He washes
 up after every meal, as one does.
 
-**HUD** (tappable icons in the sky): yarn ball starts a 60 s play session
-(bat-and-chase, pounces — the only place his jump lives), fish drops a bowl
-he trots over to eat, three hearts show his worst current need (tap for the
-full status page), battery is the battery. Icons stay quiet grey until a stat
-genuinely wants attention. Some hours after a meal, a poop appears somewhere
-in the walked world; it costs affection every hour until you tap it away.
+**HUD** (tappable gauge-icons in the sky): every icon fills bottom-up with
+its stat — yarn ball with today's play, fish with food, a heart with
+affection, a dumbbell with exercise. Tapping the fish drops a bowl, the ball
+starts a 60 s play session (bat-and-chase, pounces — the only place his jump
+lives), the heart opens the status page. A full gauge refuses its tap: no
+dinner for a fed cat, no new ball once he's had his games (fresh again each
+day). Some hours after a meal, a poop appears somewhere in the walked world;
+it costs affection every hour until you tap it away.
 
 **The ear**: the mic listens (only while awake, gated during his own sounds)
 for any sharp sound above the room's ambient floor. After a wake the park is

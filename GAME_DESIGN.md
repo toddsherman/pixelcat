@@ -26,25 +26,25 @@ diminishing returns per session — spam doesn't max a cat.
 Four always-visible icons in the sky — world objects are touchable, and so
 is the HUD. No navigation state, no open/close.
 
-- **Top-left cluster**: yarn ball (Play), fish (Feed), three hearts (Status).
-  **Top-right**: battery (existing).
-- Every icon shows something at a glance and does something when tapped:
-  - **Fish** → a bowl drops into the world; he notices, trots over, eats
-    (groom/slurp reuse), and washes up after dinner like a real cat. One
-    bowl at a time; an untouched bowl despawns.
-  - **Yarn ball** → 60 s play session: a ball drops into the world and he
-    plays with it — paw-batting and pouncing jumps, the **only** place the
-    pawing and big-jump animations appear. Play scores double exercise and
-    extra hearts. Outside play, tapping him just earns a glance and a tail
-    flick; the pawing animation leaves the idle rotation.
-  - **Hearts** → show his *worst* current need in six half-heart steps
-    (min of the three stats) — low hearts always mean something specific
-    needs doing. Tap for the full-screen status page: three stat bars
-    (F / A / X) + battery + poop count, tap to exit.
-  - **Battery** → the existing full-screen gauge.
-- Quiet HUD: icons render dim so the park stays scenic; an icon brightens
-  as an invitation when its stat genuinely wants attention (fish glows when
-  hungry, ball when under-exercised).
+- **Top-left cluster**: yarn ball (Play), fish (Food), one heart
+  (Affection), dumbbell (Exercise). **Top-right**: battery.
+- **Every icon is a vertical gauge**: its art exists in quiet grey and
+  fills bottom-up with its true colours as the value rises — the fill IS
+  the reading, no separate bars needed at a glance.
+  - **Fish** (fills with food) → tap drops a bowl into the world; he
+    notices, trots over, eats (groom/slurp reuse), and washes up after
+    dinner like a real cat. One bowl at a time; an untouched bowl
+    despawns. **A full fish refuses the tap** — no dinner for a fed cat.
+  - **Yarn ball** (fills with today's play) → tap starts a 60 s play
+    session: paw-batting and pouncing jumps, the **only** place those
+    animations appear. Play scores double exercise and extra affection.
+    **A full ball refuses the tap** — he has had his games today; the
+    gauge resets with the new day.
+  - **Heart** (fills with affection) → tap for the full-screen status
+    page: three stat bars (F / A / X) + battery + poop count, tap to exit.
+  - **Dumbbell** (fills with exercise) → pure gauge; full means pleasantly
+    worn out and ready for his nap.
+  - **Battery** → the existing full-screen gauge on tap.
 - Icon hit-boxes take priority over the side-zone leap taps (same precedence
   the battery tap uses today).
 - **Buttons** do exactly one thing: wake the device. PWR's 6-second hardware

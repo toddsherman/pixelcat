@@ -116,7 +116,7 @@ int main(void)
 {
     // --- Feed: fish icon tap spawns the bowl; he walks over and eats ---
     fresh_present_cat();
-    cat_set_stats(35, 62, 20);
+    cat_set_stats(35, 62, 20, 0);
     tap(CELL(13), CELL(4));  // fish icon zone
     int ate = 0, slurps = 0, post_slurps = 0;
     for (int i = 0; i < (int)(14.0f / DT); i++) {
@@ -138,7 +138,7 @@ int main(void)
 
     // --- Play: ball icon tap starts a session with bats or pounces ---
     fresh_present_cat();
-    cat_set_stats(80, 62, 20);
+    cat_set_stats(80, 62, 20, 0);
     tap(CELL(4), CELL(4));  // yarn ball icon zone
     int hits = 0;
     for (int i = 0; i < (int)(20.0f / DT); i++) {
@@ -147,6 +147,28 @@ int main(void)
     }
     expect(hits >= 2, "play session scores hits");
     expect(cat_state() == CAT_IDLE, "session over, back to idle");
+
+    // --- Full gauges gate their taps: no dinner for a fed cat ---
+    fresh_present_cat();
+    cat_set_stats(100, 62, 20, 0);
+    tap(CELL(13), CELL(4));
+    int ate_full = 0;
+    for (int i = 0; i < (int)(12.0f / DT); i++) {
+        idle_frames(1);
+        ate_full += cat_take_eat() ? 1 : 0;
+    }
+    expect(ate_full == 0, "a full fish gauge refuses the tap");
+
+    // --- ...and no new ball once he has had his games ---
+    fresh_present_cat();
+    cat_set_stats(80, 62, 20, 100);
+    tap(CELL(4), CELL(4));
+    int hits_full = 0;
+    for (int i = 0; i < (int)(8.0f / DT); i++) {
+        idle_frames(1);
+        hits_full += cat_take_play_hit() ? 1 : 0;
+    }
+    expect(hits_full == 0, "a full play gauge refuses the ball");
 
     // --- Poop: tap cleans it ---
     fresh_present_cat();
@@ -283,11 +305,11 @@ int main(void)
 
     // --- Affection shows in the purr ---
     fresh_present_cat();
-    cat_set_stats(80, 100, 50);
+    cat_set_stats(80, 100, 50, 0);
     pet_until_purr(2.0f, 5.0f);  // never reached: just pet for 5 s
     const float purr_devoted = cat_purr_level();
     fresh_present_cat();
-    cat_set_stats(80, 0, 50);
+    cat_set_stats(80, 0, 50, 0);
     pet_until_purr(2.0f, 5.0f);
     const float purr_aloof = cat_purr_level();
     expect(purr_devoted > purr_aloof + 0.1f,
@@ -297,7 +319,7 @@ int main(void)
     int fresh_frames = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 0);  // a fresh morning cat
+        cat_set_stats(80, 60, 0, 0);  // a fresh morning cat
         cat_touch_t t = {0};
         cat_update(DT, &t, 8.0f, 0.0f);
         while (cat_state() != CAT_HIDING && fresh_frames < 500) {
@@ -308,7 +330,7 @@ int main(void)
     int worn_frames = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 100);  // his whole day already had
+        cat_set_stats(80, 60, 100, 0);  // his whole day already had
         cat_touch_t t = {0};
         cat_update(DT, &t, 8.0f, 0.0f);
         while (cat_state() != CAT_HIDING && worn_frames < 500) {
@@ -323,13 +345,13 @@ int main(void)
     int doze_worn = 0, doze_fresh = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 100);
+        cat_set_stats(80, 60, 100, 0);
         while (cat_state() != CAT_SLEEPING && doze_worn < 4000) {
             idle_frames(1);
             doze_worn++;
         }
         fresh_present_cat();
-        cat_set_stats(80, 60, 0);
+        cat_set_stats(80, 60, 0, 0);
         while (cat_state() != CAT_SLEEPING && doze_fresh < 4000) {
             idle_frames(1);
             doze_fresh++;
@@ -342,14 +364,14 @@ int main(void)
     float span_hungry = 0.0f, span_full = 0.0f;
     for (int hungry = 0; hungry < 2; hungry++) {
         fresh_present_cat();
-        cat_set_stats(80, 60, 50);
+        cat_set_stats(80, 60, 50, 0);
         cat_debug_force(50);  // bowl: establishes the food spot
         for (int i = 0; i < (int)(14.0f / DT); i++) {
             idle_frames(1);
         }
         drain_events();
         const float spot = cat_debug_world();
-        cat_set_stats(hungry ? 10 : 95, 60, 50);
+        cat_set_stats(hungry ? 10 : 95, 60, 50, 0);
         float max_d = 0.0f;
         for (int i = 0; i < (int)(60.0f / DT); i++) {
             idle_frames(1);

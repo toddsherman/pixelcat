@@ -34,9 +34,12 @@
 #define EXER_PER_JUMP 2.0f
 
 // Play sessions score double exercise and extra hearts (the spec's words).
+// The play gauge itself fills in about a session and a half — a full ball
+// means he has had his games for the day.
 #define PLAY_EXER_PER_HIT (2.0f * EXER_PER_JUMP)
 #define PLAY_AFFECT_PER_HIT 0.6f
 #define PLAY_FOOD_PER_HIT 0.2f
+#define PLAY_GAUGE_PER_HIT 3.0f
 
 // A meal shows up again as a poop 2-4 h later; each one left visible has an
 // hourly affection price — he has standards.
@@ -100,6 +103,7 @@ void stats_reset(void)
     s_stats.food = 85.0f;
     s_stats.affection = 55.0f;
     s_stats.exercise = 0.0f;
+    s_stats.play = 0.0f;
     s_pet_budget = PET_SESSION_BUDGET;
     s_day_serial = 0;
     s_poop_due_s = 0.0f;
@@ -189,6 +193,7 @@ void stats_on_play_hit(void)
     s_stats.exercise = clamp01_100(s_stats.exercise + PLAY_EXER_PER_HIT);
     s_stats.affection = clamp01_100(s_stats.affection + PLAY_AFFECT_PER_HIT);
     s_stats.food = clamp01_100(s_stats.food - PLAY_FOOD_PER_HIT);
+    s_stats.play = clamp01_100(s_stats.play + PLAY_GAUGE_PER_HIT);
 }
 
 void stats_note_fed(void)
@@ -223,7 +228,9 @@ void stats_note_date(int32_t day_serial)
         return;
     }
     if (s_day_serial != 0 && day_serial != s_day_serial) {
-        s_stats.exercise = 0.0f;  // a new day, a fresh walk to take
+        // A new day: a fresh walk to take, fresh games to play.
+        s_stats.exercise = 0.0f;
+        s_stats.play = 0.0f;
     }
     s_day_serial = day_serial;
 }
@@ -277,7 +284,8 @@ void stats_offline(double seconds)
 #define STATS_MAGIC_V1 0x50435331u  // 'PCS1'
 #define STATS_MAGIC_V2 0x50435332u  // 'PCS2': adds the poop fields
 #define STATS_MAGIC_V3 0x50435333u  // 'PCS3': adds trust (scares, wariness)
-#define STATS_MAGIC 0x50435334u     // 'PCS4': energy retired; hunger is food
+#define STATS_MAGIC_V4 0x50435334u  // 'PCS4': energy retired; hunger is food
+#define STATS_MAGIC 0x50435335u     // 'PCS5': adds the daily play gauge
 
 // The retired layouts, exactly as they were written (sizeof must match the
 // stored blob lengths, trailing padding included).
@@ -321,6 +329,18 @@ typedef struct {
     int32_t poop_count;
     int32_t trust_level;
     int32_t trust_wary;
+} stats_blob_v4_t;
+
+typedef struct {
+    uint32_t magic;
+    float food, affection, exercise, play;
+    float pet_budget;
+    int64_t saved_epoch;
+    int32_t day_serial;
+    float poop_due_s;
+    int32_t poop_count;
+    int32_t trust_level;
+    int32_t trust_wary;
 } stats_blob_t;
 
 static const char *TAG = "stats";
@@ -355,7 +375,8 @@ bool stats_store_load(void)
         return false;  // first boot: the namespace does not exist yet
     }
     union {
-        stats_blob_t v4;
+        stats_blob_t v5;
+        stats_blob_v4_t v4;
         stats_blob_v3_t v3;  // v1/v2 are prefixes of this layout
     } u;
     size_t len = sizeof(u);
@@ -366,8 +387,23 @@ bool stats_store_load(void)
     }
 
     stats_blob_t b;
-    if (len == sizeof(stats_blob_t) && u.v4.magic == STATS_MAGIC) {
-        b = u.v4;
+    if (len == sizeof(stats_blob_t) && u.v5.magic == STATS_MAGIC) {
+        b = u.v5;
+    } else if (len == sizeof(stats_blob_v4_t) && u.v4.magic == STATS_MAGIC_V4) {
+        b = (stats_blob_t){
+            .magic = STATS_MAGIC,
+            .food = u.v4.food,
+            .affection = u.v4.affection,
+            .exercise = u.v4.exercise,
+            .play = 0.0f,
+            .pet_budget = u.v4.pet_budget,
+            .saved_epoch = u.v4.saved_epoch,
+            .day_serial = u.v4.day_serial,
+            .poop_due_s = u.v4.poop_due_s,
+            .poop_count = u.v4.poop_count,
+            .trust_level = u.v4.trust_level,
+            .trust_wary = u.v4.trust_wary,
+        };
     } else if ((len == sizeof(stats_blob_v1_t) && u.v3.magic == STATS_MAGIC_V1) ||
                (len == sizeof(stats_blob_v2_t) && u.v3.magic == STATS_MAGIC_V2) ||
                (len == sizeof(stats_blob_v3_t) && u.v3.magic == STATS_MAGIC_V3)) {
@@ -380,6 +416,7 @@ bool stats_store_load(void)
             .food = u.v3.hunger,
             .affection = u.v3.affection,
             .exercise = u.v3.exercise,
+            .play = 0.0f,
             .pet_budget = u.v3.pet_budget,
             .saved_epoch = u.v3.saved_epoch,
             .day_serial = u.v3.day_serial,
@@ -395,6 +432,7 @@ bool stats_store_load(void)
     s_stats.food = clamp01_100(b.food);
     s_stats.affection = clamp01_100(b.affection);
     s_stats.exercise = clamp01_100(b.exercise);
+    s_stats.play = clamp01_100(b.play);
     s_pet_budget = clamp01_100(b.pet_budget);
     s_day_serial = b.day_serial;
     s_loaded_epoch = b.saved_epoch;
@@ -423,6 +461,7 @@ void stats_store_save(void)
         .food = s_stats.food,
         .affection = s_stats.affection,
         .exercise = s_stats.exercise,
+        .play = s_stats.play,
         .pet_budget = s_pet_budget,
         .saved_epoch = clock_valid() ? (int64_t)time(NULL) : 0,
         .day_serial = s_day_serial,

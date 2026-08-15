@@ -16,6 +16,7 @@ typedef struct {
     float food;       // 100 fed .. 0 hungry
     float affection;  // 100 devoted .. 0 aloof
     float exercise;   // today's activity; full = satisfied and sleepy
+    float play;       // today's play; full = no more yarn balls today
 } stats_t;
 
 void stats_reset(void);

@@ -60,8 +60,8 @@ int cat_take_dash(void);
 // Logical pixels walked/leapt since the last call — feeds the exercise stat.
 float cat_take_walked(void);
 
-// Current stat values pushed in for the HUD hearts and the status page.
-void cat_set_stats(int food, int affection, int exercise);
+// Current stat values pushed in for the HUD gauges and the status page.
+void cat_set_stats(int food, int affection, int exercise, int play);
 
 // Drop a poop somewhere in the walked world (boot restore + due timer).
 void cat_spawn_poop(void);

@@ -39,8 +39,8 @@ int main(int argc, char **argv)
     const float seconds = (argc > 2) ? (float)atof(argv[2]) : 1.0f;
 
     cat_init();
-    // Stat values that light the fish (hungry) and show partial hearts.
-    cat_set_stats(35, 62, 20);
+    // Varied levels so every gauge shows a different fill.
+    cat_set_stats(35, 62, 20, 55);
     cat_set_battery(72, false);
     if (want < 10) {
         cat_debug_force(0);  // boot is absent; these states want him present
