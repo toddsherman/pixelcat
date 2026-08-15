@@ -318,14 +318,18 @@ static const struct {
 };
 #define ANIM_COUNT ((int)(sizeof(k_anims) / sizeof(k_anims[0])))
 
-// Which test screen is showing, if any.
+// Which test screen is showing, if any. The lists own the whole screen;
+// the two browsers overlay the park, because looking at the park is the
+// entire point of them.
 enum { TS_OFF = 0, TS_MAIN, TS_ANIM, TS_ICONS, TS_BEHAV, TS_MODEL };
+#define TS_IS_PAGE(v) ((v) == TS_MAIN || (v) == TS_BEHAV || (v) == TS_MODEL)
 
 // A little text, drawn by the menus and the animation browser.
 static int draw_text(int x, int y, const char *str, uint8_t col);
 
-// The animation browser's voice, defined with the browser further down.
+// The animation browser, defined with the rest of the test bench below.
 static void anim_voice(void);
+static void anim_show(void);
 
 // Behaviour tuning.
 #define SHAKE_HISS_THRESHOLD 6.5f
@@ -1627,6 +1631,15 @@ void cat_debug_force(int mode)
         drop_ball();
     } else if (mode == 53) {
         s.status_screen = true;
+    } else if (mode == 57) {
+        s.cam_free = false;
+        s.screen = TS_ANIM;
+        s.anim_sel = 4;  // trot
+        anim_show();
+    } else if (mode == 58) {
+        s.cam_free = false;
+        s.screen = TS_ICONS;
+        s.icon_fill = 50;
     } else if (mode == 55) {
         s.screen = TS_BEHAV;
         s.test_sel = 1;
@@ -1756,10 +1769,27 @@ static void compose(void)
     }
 
     if (s.screen == TS_ANIM) {
-        // Its name where the HUD would be, with the way out beneath.
+        // Its name where the HUD would be, with the way out beneath. On a
+        // dark band, or it is illegible against a bright sky.
+        for (int y = 0; y < 13; y++) {
+            for (int x = 0; x < CANVAS_W; x++) {
+                px(x, y, C_BLACK);
+            }
+        }
         draw_text(2, 1, k_anims[s.anim_sel].name, C_WHITE);
         draw_text(2, 7, "BOOT BACK", C_UI_DIM);
         return;
+    }
+    if (s.screen == TS_ICONS) {
+        // The icons are the point, so the hint sits at the foot.
+        // Two lines: the chunky world font fits only 14 characters across.
+        for (int y = CANVAS_H - 13; y < CANVAS_H; y++) {
+            for (int x = 0; x < CANVAS_W; x++) {
+                px(x, y, C_BLACK);
+            }
+        }
+        draw_text(2, CANVAS_H - 12, "PWR FILL", C_WHITE);
+        draw_text(2, CANVAS_H - 6, "BOOT BACK", C_UI_DIM);
     }
 
     // HUD: five gauges — yarn ball (play), fish (food), heart (affection),
@@ -2121,8 +2151,10 @@ static void compose_test(void)
                                            : "STILL LEARNING - NO WAKES YET",
                        s.mi_mature ? C_BATT_G : C_UI_DIM);
             if (s.mi_peak >= 0) {
-                snprintf(line, sizeof(line), "EXPECTS YOU AROUND %d:%02d",
-                         s.mi_peak / 60, s.mi_peak % 60);
+                const int h24 = s.mi_peak / 60;
+                const int h12 = (h24 % 12 == 0) ? 12 : h24 % 12;
+                snprintf(line, sizeof(line), "EXPECTS YOU AROUND %d:%02d %s",
+                         h12, s.mi_peak % 60, (h24 < 12) ? "AM" : "PM");
             } else {
                 snprintf(line, sizeof(line), "NO PATTERN YET");
             }
@@ -2383,7 +2415,7 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
-    if (s.screen >= TS_MAIN) {
+    if (TS_IS_PAGE(s.screen)) {
         compose_test();
     } else if (s.status_screen) {
         compose_status();
@@ -2405,7 +2437,7 @@ void cat_render(void)
         for (int row = 0; row < BAND_ROWS; row++) {
             uint16_t *out = buf + row * LCD_H_RES;
 
-            if (s.status_screen || s.screen >= TS_MAIN) {
+            if (s.status_screen || TS_IS_PAGE(s.screen)) {
                 // The menu: finer 6 px cells on black, no world behind.
                 const int lx_cell = (y0 + row) / MENU_SCALE;
                 const uint16_t *pal = s_pal565[BG_DAY];
