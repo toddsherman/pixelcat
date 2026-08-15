@@ -320,7 +320,8 @@ static void grade_rgb(int variant, int r, int g, int b, int *ro, int *go, int *b
             rf = r * .82f + 34; gf = g * .68f + 16; bf = b * .78f + 26;
             break;
         case BG_DUSK:
-            rf = r * .92f + 28; gf = g * .62f + 8; bf = b * .45f + 6;
+            // Soft rose rather than orange, to sit in the pink sunset art.
+            rf = r * .88f + 20; gf = g * .70f + 12; bf = b * .64f + 16;
             break;
         case BG_TWILIGHT:
             rf = (r + (gy - r) * .3f) * .48f + 22;
