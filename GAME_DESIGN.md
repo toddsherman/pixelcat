@@ -29,8 +29,11 @@ is the HUD. No navigation state, no open/close.
 - Every icon shows something at a glance and does something when tapped:
   - **Fish** → a bowl drops into the world; he notices, trots over, eats
     (groom/slurp reuse). One bowl at a time; an untouched bowl despawns.
-  - **Yarn ball** → 60 s play session: jumps and bounds score double
-    exercise and extra hearts.
+  - **Yarn ball** → 60 s play session: a ball drops into the world and he
+    plays with it — paw-batting and pouncing jumps, the **only** place the
+    pawing and big-jump animations appear. Play scores double exercise and
+    extra hearts. Outside play, tapping him just earns a glance and a tail
+    flick; the pawing animation leaves the idle rotation.
   - **Hearts** → show his *worst* current need in six half-heart steps
     (min of the four stats) — low hearts always mean something specific
     needs doing. Tap for the full-screen status page: four stat bars +
