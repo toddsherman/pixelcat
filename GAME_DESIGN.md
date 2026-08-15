@@ -19,18 +19,30 @@ reads as "hungry cat", never "tragedy".
 
 Petting has diminishing returns per session — spam doesn't max a cat.
 
-## Menu (two buttons)
+## HUD (no menu)
 
-- **Left button**: open menu / cycle highlight (wraps). **Right button**: select.
-- Items as a pixel-icon strip along the bottom: **Feed · Play · Status · Close**.
-- Auto-closes after 8 s without a press. A press that wakes the device is
-  consumed — it never doubles as a menu press.
-- **Feed**: food appears in the world; he trots to it and eats (groom/slurp
-  reuse). **Play**: 60 s where jumps and bounds score double exercise and
-  extra hearts. **Status**: full-screen stat bars + battery, tap to exit.
-- PWR's 6-second hardware power-off is untouchable; menu uses short presses.
-- Physical left/right mapping confirmed empirically at first flash (one-line
-  swap).
+Four always-visible icons in the sky — world objects are touchable, and so
+is the HUD. No navigation state, no open/close.
+
+- **Top-left cluster**: yarn ball (Play), fish (Feed), three hearts (Status).
+  **Top-right**: battery (existing).
+- Every icon shows something at a glance and does something when tapped:
+  - **Fish** → a bowl drops into the world; he notices, trots over, eats
+    (groom/slurp reuse). One bowl at a time; an untouched bowl despawns.
+  - **Yarn ball** → 60 s play session: jumps and bounds score double
+    exercise and extra hearts.
+  - **Hearts** → show his *worst* current need in six half-heart steps
+    (min of the four stats) — low hearts always mean something specific
+    needs doing. Tap for the full-screen status page: four stat bars +
+    battery + poop count, tap to exit.
+  - **Battery** → the existing full-screen gauge.
+- Quiet HUD: icons render dim so the park stays scenic; an icon brightens
+  as an invitation when its stat genuinely wants attention (fish glows when
+  hungry, ball when under-exercised).
+- Icon hit-boxes take priority over the side-zone leap taps (same precedence
+  the battery tap uses today).
+- **Buttons** do exactly one thing: wake the device. PWR's 6-second hardware
+  power-off is untouchable. Shortcuts can be added later if a need emerges.
 
 ## Poop
 
