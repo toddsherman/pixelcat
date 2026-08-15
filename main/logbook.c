@@ -88,6 +88,16 @@ void logbook_flush(void)
     s_head = 0;
 }
 
+void logbook_forget(void)
+{
+    s_head = 0;
+    s_overflowed = false;
+    if (sdcard_ready()) {
+        remove(EVENTS_PATH);
+    }
+    ESP_LOGI(TAG, "event history deleted");
+}
+
 // Boot bookkeeping. The previous run's length lives in NVS so an unexpected
 // reset is visible as "ran 43 s, then brownout" rather than a silent gap.
 void logbook_note_boot(void)

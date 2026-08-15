@@ -406,6 +406,7 @@ static struct {
     int test_sel;
     bool anim_browse;                  // watching a single cycle play
     int anim_sel;
+    int confirm_sel;                   // item waiting on a second press
     bool daypart_forced;               // a forced daypart outranks the clock
     char dbg_line1[24], dbg_line2[24];
 
@@ -716,6 +717,7 @@ void cat_init(void)
     s.facing_left = true;
     s.batt_pct = -1;
     s.st_f = s.st_a = s.st_x = s.st_p = s.st_s = 100;  // until main pushes
+    s.confirm_sel = -1;
     s.rng = 0x9E3779B9;
     s.entice = -1;
     // Every boot is a wake: the park starts empty until something calls him.
@@ -2012,7 +2014,7 @@ static void compose_status(void)
 
 static const char *const k_test_items[TEST_COUNT] = {
     "DAYPART", "WEATHER", "ANIMATIONS", "FILL ALL", "EMPTY ALL",
-    "SCARE HIM", "SUMMON", "AUDITION", "SLEEP NOW",
+    "SCARE HIM", "SUMMON", "AUDITION", "SLEEP NOW", "FORGET ALL",
     "EXIT MENU", "EXIT TEST",
 };
 
@@ -2038,22 +2040,28 @@ static void compose_test(void)
         px(x, 18, C_UI_DIM);
     }
 
-    // Eleven items, 13 rows apart from y=24: the last ends at 161, clear of
-    // the footer at 172.
+    // Space the list to whatever fits between the rule and the footer, so
+    // adding an item never silently pushes the last one off the screen
+    // again — it just tightens the gaps.
+    const int top = 24;
+    const int pitch = ((MENU_H - 16) - top - SMALL_H) / (TEST_COUNT - 1);
     for (int i = 0; i < TEST_COUNT; i++) {
-        const int y = 24 + i * 13;
+        const int y = top + i * pitch;
         const bool on = (i == s.test_sel);
         if (on) {
             small_glyph(8, y, glyph_of('>'), C_BATT_G);
         }
         small_text(18, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
+        if (i == s.confirm_sel) {
+            small_text(110, y, "SURE - PICK AGAIN", C_BATT_R);
+        }
     }
 
     // What the three art rows are pointing at.
-    small_text(110, 24, k_daypart_names[s.daypart],
+    small_text(110, top, k_daypart_names[s.daypart],
                s.daypart_forced ? C_BATT_Y : C_UI_DIM);
-    small_text(110, 37, "NOT BUILT", C_UI_DIM);
-    small_text(110, 50, k_anims[s.anim_sel].name, C_BATT_Y);
+    small_text(110, top + pitch, "NOT BUILT", C_UI_DIM);
+    small_text(110, top + 2 * pitch, k_anims[s.anim_sel].name, C_BATT_Y);
 
     small_text(8, MENU_H - 12, s.dbg_line1, C_UI_DIM);
     small_text(MENU_W - 110, MENU_H - 12, "PWR MOVE BOOT PICK", C_UI_DIM);
@@ -2113,6 +2121,7 @@ int cat_button_pwr(void)
         return -1;
     }
     s.test_sel = (s.test_sel + 1) % TEST_COUNT;
+    s.confirm_sel = -1;  // moving away withdraws the question
     return -1;
 }
 
@@ -2129,6 +2138,15 @@ int cat_button_boot(void)
         return -1;
     }
     const int item = s.test_sel;
+
+    // Destructive things ask twice: the first press poses the question,
+    // a second on the same row answers it.
+    if (item == TEST_FORGET && s.confirm_sel != TEST_FORGET) {
+        s.confirm_sel = TEST_FORGET;
+        return -1;
+    }
+    s.confirm_sel = -1;
+
     switch (item) {
         case TEST_DAYPART:
             s.daypart = (s.daypart + 1) % BG_VARIANTS;

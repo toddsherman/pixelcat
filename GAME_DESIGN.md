@@ -62,6 +62,10 @@ is the HUD. No navigation state, no open/close.
     on screen: PWR steps to the next, BOOT goes back to the menu.
   - Plus the gameplay testers: fill or empty every gauge, scare him, summon
     or banish him, force a proactive audition, sleep now.
+  - **FORGET ALL** wipes what he has learned — the schedule map, the
+    bandit's opinions, the wake record and the event history — because a
+    week of development is not a life, and he should not learn to expect
+    you at the hours you happened to be debugging. It asks twice.
   - Two ways out, because they mean different things: **EXIT MENU** puts
     the menu away and leaves anything forced still forced (the point of
     forcing a daypart is to walk around in it), while **EXIT TEST** hands

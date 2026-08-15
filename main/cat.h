@@ -104,6 +104,7 @@ enum {
     TEST_ANIM,         // browse every animation, playing in the park
     TEST_FILL, TEST_EMPTY, TEST_SCARE, TEST_SUMMON, TEST_AUDITION,
     TEST_SLEEP,
+    TEST_FORGET,     // wipe what he has learned (asks twice)
     TEST_EXIT_MENU,  // put the menu away; anything forced stays forced
     TEST_EXIT_TEST,  // and this hands everything back to the clock
     TEST_COUNT,

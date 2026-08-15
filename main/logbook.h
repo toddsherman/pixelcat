@@ -41,6 +41,10 @@ void logbook_flush(void);
 // is the first record that survives a power cycle.
 void logbook_note_boot(void);
 
+// Throw away the event history — the raw material a retune would replay.
+// The boot log survives; it is diagnostics, not training.
+void logbook_forget(void);
+
 // Stamp how long this run has lasted, so the next boot can report it even
 // if this one ends without warning.
 void logbook_mark_uptime(void);

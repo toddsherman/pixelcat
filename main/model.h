@@ -75,4 +75,9 @@ void model_wake_stats(int *hits, int *misses);
 #ifdef ESP_PLATFORM
 bool model_store_load(void);
 void model_store_save(void);
+
+// Forget everything he has learned: the schedule map, the bandit's
+// opinions, the wake record, all of it, on disk as well as in memory. For
+// when the pattern he learned was a development session and not a life.
+void model_forget(void);
 #endif

@@ -237,6 +237,11 @@ static void cat_task(void *arg)
                     cat_test_close();
                     power_sleep_now();
                     break;
+                case TEST_FORGET:
+                    model_forget();
+                    logbook_forget();
+                    cat_test_close();
+                    break;
                 default:
                     break;  // the engine handled it
             }

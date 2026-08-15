@@ -278,6 +278,18 @@ bool model_store_load(void)
     return true;
 }
 
+void model_forget(void)
+{
+    model_reset();
+    nvs_handle_t h;
+    if (nvs_open("pixelcat", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_key(h, "model");
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    ESP_LOGI(TAG, "training erased; he knows nothing about you again");
+}
+
 void model_store_save(void)
 {
     model_blob_t b = {.magic = MODEL_MAGIC};
