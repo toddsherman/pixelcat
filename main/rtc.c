@@ -130,6 +130,14 @@ esp_err_t pcf_init(i2c_master_bus_handle_t bus)
     return ESP_OK;
 }
 
+static bool sys_clock_valid(struct tm *out)
+{
+    const time_t now = time(NULL);
+    localtime_r(&now, out);
+    // Before the first NTP sync the system clock sits in 1970.
+    return out->tm_year + 1900 >= 2020;
+}
+
 esp_err_t pcf_set_civil(int year, int mon, int day, int hour, int min, int sec)
 {
     if (!s_ready) {
@@ -161,14 +169,6 @@ bool pcf_date(int *year, int *mon, int *day)
     *mon = now.mon;
     *day = now.day;
     return true;
-}
-
-static bool sys_clock_valid(struct tm *out)
-{
-    const time_t now = time(NULL);
-    localtime_r(&now, out);
-    // Before the first NTP sync the system clock sits in 1970.
-    return out->tm_year + 1900 >= 2020;
 }
 
 int pcf_minutes_of_day(void)
