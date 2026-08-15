@@ -1,6 +1,8 @@
 #include "rtc.h"
 
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include "esp_log.h"
 
