@@ -111,17 +111,21 @@ static esp_err_t expander_hard_reset(i2c_master_bus_handle_t bus)
 
     {
         // Assert: output bits low first, then switch the pins to output.
+        // Pulse TWICE with a generous hold: a single 20 ms pulse was observed
+        // (2026-08-14) to leave a deeply wedged panel dark until a second
+        // boot; two 50 ms pulses clear it in one.
         const uint8_t low[2] = {EXPANDER_REG_OUTPUT, (uint8_t)(out & ~EXPANDER_RESET_BITS)};
         const uint8_t drv[2] = {EXPANDER_REG_CONFIG, (uint8_t)(dir & ~EXPANDER_RESET_BITS)};
+        const uint8_t high[2] = {EXPANDER_REG_OUTPUT, (uint8_t)(out | EXPANDER_RESET_BITS)};
         if (i2c_master_transmit(dev, low, 2, 50) != ESP_OK) goto fail;
         if (i2c_master_transmit(dev, drv, 2, 50) != ESP_OK) goto fail;
-
-        vTaskDelay(pdMS_TO_TICKS(20));
-
-        // Release: drive high (kept as outputs, which holds reset deasserted
-        // more firmly than the pull-ups alone).
-        const uint8_t high[2] = {EXPANDER_REG_OUTPUT, (uint8_t)(out | EXPANDER_RESET_BITS)};
-        if (i2c_master_transmit(dev, high, 2, 50) != ESP_OK) goto fail;
+        for (int pulse = 0; pulse < 2; pulse++) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            if (i2c_master_transmit(dev, high, 2, 50) != ESP_OK) goto fail;
+            vTaskDelay(pdMS_TO_TICKS(50));
+            if (pulse == 0 &&
+                i2c_master_transmit(dev, low, 2, 50) != ESP_OK) goto fail;
+        }
     }
 
     // Panel and touch both need a beat after a hardware reset before they
