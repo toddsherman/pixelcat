@@ -164,14 +164,14 @@ static const char *const POOF[] = {
     "W.W.W",
 };
 
-// HUD icons, top-left: yarn ball (play) and fish (feed).
+// HUD icons, top-left: yarn ball (play), fish (feed), heart (status). All
+// three are 5 cells tall and sit on the same top line.
 static const char *const ICON_BALL[] = {
-    ".####.",
-    "#rprp#",
-    "#prrr#",
-    "#rrpr#",
-    "#prpr#",
-    ".####.",
+    ".###.",
+    "#rrW#",
+    "#rWr#",
+    "#Wrr#",
+    ".###.",
 };
 
 static const char *const ICON_FISH[] = {
@@ -180,6 +180,14 @@ static const char *const ICON_FISH[] = {
     "#zWzzzzzz",
     ".#zzzz##z",
     "..####..#",
+};
+
+static const char *const ICON_HEART[] = {
+    ".r.r.",
+    "rrrrr",
+    "rrrrr",
+    ".rrr.",
+    "..r..",
 };
 
 // Small overlay sprites are stamped unflipped with their own widths.
@@ -706,8 +714,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
 
     // The battery and status views swallow all interaction: one tap exits.
-    const bool tap_on_batt = released_tap && s.last_x >= CANVAS_W - 15.0f &&
-                             s.last_y <= 6.0f;
+    const bool tap_on_batt = released_tap && s.last_x >= 43.0f &&
+                             s.last_y <= 9.0f;
     if (s.batt_screen || s.status_screen) {
         if (released_tap) {
             s.batt_screen = false;
@@ -727,8 +735,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     // HUD icon row (top-left): ball, fish, hearts. Icon hit-boxes outrank
     // every world gesture, same as the battery corner.
     bool tap_claimed = false;
-    if (released_tap && s.last_y < 8.0f && s.last_x < 40.0f) {
-        if (s.last_x >= 20.0f) {
+    if (released_tap && s.last_y < 9.0f && s.last_x < 43.0f) {
+        if (s.last_x >= 19.0f) {
             s.status_screen = true;
             s.was_down = touch->down;
             return;
@@ -1528,8 +1536,8 @@ static void stamp_icon(int x0, int y0, const char *const *rows, int nrows,
 // One HUD heart: 2 = full, 1 = half, 0 = empty outline.
 static void draw_heart_icon(int x0, int y0, int level)
 {
-    for (int y = 0; y < 4; y++) {
-        const char *row = HEART[y];
+    for (int y = 0; y < 5; y++) {
+        const char *row = ICON_HEART[y];
         for (int x = 0; x < 5; x++) {
             if (row[x] == 'r') {
                 const bool lit = (level == 2) || (level == 1 && x < 3);
@@ -1596,9 +1604,11 @@ static void compose(void)
         }
     }
 
-    // HUD, top-left: yarn ball, fish, three hearts. Quiet grey by default;
-    // an icon brightens as an invitation when its stat wants attention.
-    stamp_icon(2, 1, ICON_BALL, 6, s.ball_alive || s.st_x < 35);
+    // HUD, top-left: yarn ball, fish, three hearts — all 5 cells tall, all
+    // 2 cells below the top edge, clear of the left edge. Quiet grey by
+    // default; an icon brightens as an invitation when its stat wants
+    // attention.
+    stamp_icon(3, 2, ICON_BALL, 5, s.ball_alive || s.st_x < 35);
     stamp_icon(10, 2, ICON_FISH, 5,
                (s.bowl_alive && s.bowl_fresh) || s.st_f < 40);
     const int worst = min3(s.st_f, s.st_a, s.st_x);
@@ -1609,16 +1619,19 @@ static void compose(void)
         draw_heart_icon(21 + i * 6, 2, lvl);
     }
 
-    // Tiny battery bar, top right: a plain closed 8x3 rectangle, 6 fill cells.
+    // Battery, top right, on the same line at the same height: a closed
+    // 9x5 rectangle with 7 fill cells.
     if (s.batt_pct >= 0) {
-        const int bx = CANVAS_W - 13, by = 1;
-        for (int x = 0; x < 8; x++) {
+        const int bx = 45, by = 2;
+        for (int x = 0; x < 9; x++) {
             px(bx + x, by, C_OUT);
-            px(bx + x, by + 2, C_OUT);
+            px(bx + x, by + 4, C_OUT);
         }
-        px(bx, by + 1, C_OUT);
-        px(bx + 7, by + 1, C_OUT);
-        const int fill = (s.batt_pct * 6 + 50) / 100;
+        for (int y = 1; y < 4; y++) {
+            px(bx, by + y, C_OUT);
+            px(bx + 8, by + y, C_OUT);
+        }
+        const int fill = (s.batt_pct * 7 + 50) / 100;
         uint8_t col = C_BATT_G;
         if (s.batt_chg) {
             col = C_BATT_B;
@@ -1627,8 +1640,10 @@ static void compose(void)
         } else if (s.batt_pct <= 40) {
             col = C_BATT_Y;
         }
-        for (int x = 0; x < 6; x++) {
-            px(bx + 1 + x, by + 1, (x < fill) ? col : C_DARK);
+        for (int y = 1; y < 4; y++) {
+            for (int x = 0; x < 7; x++) {
+                px(bx + 1 + x, by + y, (x < fill) ? col : C_DARK);
+            }
         }
     }
 }

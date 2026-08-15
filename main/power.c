@@ -95,10 +95,12 @@ void power_idle_check(void)
 
     // On USB power there is nothing to save and everything to lose (light
     // sleep pauses the USB serial port, which makes the board hard to flash
-    // and debug). Docked means awake.
+    // and debug). Docked means awake — and an unreadable fuel gauge must
+    // fail the same way, or one glitched I2C read puts a plugged-in board
+    // to sleep and takes the serial port with it.
     int pct;
     bool plugged;
-    if (battery_read(&pct, &plugged) && plugged) {
+    if (!battery_read(&pct, &plugged) || plugged) {
         power_note_activity();
         return;
     }
@@ -142,6 +144,17 @@ void power_idle_check(void)
         if (button_pressed_raw()) {
             ESP_LOGI(TAG, "woken by PWR");
             break;
+        }
+        // Docked means awake, even when the docking happens mid-sleep:
+        // every ~6 s of sleep, peek at VBUS so plugging the board in
+        // revives it (and its USB serial port) without a button press.
+        if ((slices % 20) == 19) {
+            int pct;
+            bool plugged;
+            if (battery_read(&pct, &plugged) && plugged) {
+                ESP_LOGI(TAG, "woken by USB power");
+                break;
+            }
         }
         // Every ~20 s of sleep, let the schedule model consider waking him.
         if (++slices >= 64) {
