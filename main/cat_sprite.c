@@ -1882,8 +1882,9 @@ static const char *const k_test_items[TEST_COUNT] = {
 };
 
 
+// Short enough to sit in the value column without running off the edge.
 static const char *const k_daypart_names[BG_VARIANTS] = {
-    "DAY", "DAWN", "DUSK", "TWILIGHT", "NIGHT",
+    "DAY", "DAWN", "DUSK", "TWI", "NIGHT",
 };
 
 static void compose_test(void)
@@ -1893,26 +1894,32 @@ static void compose_test(void)
     s_surf_h = MENU_H;
     memset(s_menu, C_BLACK, sizeof(s_menu));
 
-    draw_text(3, 2, "TEST MENU", C_BATT_Y);
+    // The canvas is MENU_H rows and every glyph is 5 tall: header on row 0,
+    // ten items five apart ending at 55, one footer line at 56..60. Nothing
+    // overlaps and nothing falls off the bottom.
+    draw_text(2, 0, "TEST MENU", C_BATT_Y);
+    draw_text(48, 0, s.dbg_line2, C_UI_DIM);
 
     for (int i = 0; i < TEST_COUNT; i++) {
-        const int y = 11 + i * 6;
+        const int y = 6 + i * 5;
         const bool on = (i == s.test_sel);
         if (on) {
-            draw_glyph(3, y, GL_CURSOR, C_BATT_G);
+            draw_glyph(2, y, GL_CURSOR, C_BATT_G);
         }
-        draw_text(8, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
+        draw_text(6, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
     }
-    // The daypart entry shows which one it would force; weather is a slot
-    // held open for when it exists.
-    draw_text(44, 11, k_daypart_names[s.daypart], C_BATT_Y);
-    draw_text(44, 17, "-", C_UI_DIM);
-    draw_text(44, 23, k_anims[s.anim_sel].name, C_BATT_Y);
 
-    // A footer of the things worth knowing at a glance.
-    const int fy = MENU_H - 12;
-    draw_text(3, fy, s.dbg_line1, C_UI_DIM);
-    draw_text(3, fy + 6, s.dbg_line2, C_UI_DIM);
+    // What the three art rows would do, in a column clear of the labels.
+    draw_text(50, 6, k_daypart_names[s.daypart], C_BATT_Y);
+    draw_text(50, 11, "-", C_UI_DIM);
+    {
+        char n[12];
+        snprintf(n, sizeof(n), "%d/%d", (s.anim_sel + 1) % 100,
+                 ANIM_COUNT % 100);
+        draw_text(50, 16, n, C_BATT_Y);
+    }
+
+    draw_text(2, MENU_H - 5, s.dbg_line1, C_UI_DIM);
 }
 
 // Browsing animations: the menu steps aside so the cycle can be watched in

@@ -434,10 +434,12 @@ static void cat_task(void *arg)
                 uint64_t total = 0, freeb = 0;
                 sdcard_usage(&total, &freeb);
                 char a[24], b[24];
-                snprintf(a, sizeof(a), "SD %uMB UP %us",
+                // Both must fit the menu: 15 characters across the footer,
+                // 6 in the header's right corner.
+                snprintf(a, sizeof(a), "SD%uM UP%us",
                          (unsigned)(freeb / (1024 * 1024)),
                          (unsigned)(now / 1000000));
-                snprintf(b, sizeof(b), "FEAR %d ERR %d", cat_scare_level(),
+                snprintf(b, sizeof(b), "F%d E%d", cat_scare_level(),
                          cat_flush_errors());
                 cat_set_debug_lines(a, b);
             }
