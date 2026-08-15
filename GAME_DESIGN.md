@@ -6,46 +6,46 @@ attention makes him yours, and everything is always recoverable.
 
 ## Stats
 
-Three stats, 0–100, persisted in NVS (saved every 5 minutes and on events),
-simulated through offline time via the RTC on wake, capped so an absence
-reads as "hungry cat", never "tragedy". **Every bar aspires to be full**:
-fed, loved, exercised — one direction, no mixed readings.
+Five gauges, 0–100, persisted in NVS, **paced to a ~5 minute care
+session**: do everything positive once — a feed, a play, a petting, a walk,
+a nap — and every gauge fills; leave him be and they all drain within a few
+minutes. Every bar aspires to be full.
 
-| Stat | Up | Down | Expressed as |
-|---|---|---|---|
-| Food | eating | ~6 h fed→hungry while awake and active; ¼ rate asleep; exercise burns it faster | food-seeking, standing near the food spot |
-| Affection | petting, play, making peace after a scare | slow decay; visible poop; ignoring him; **being scared (shake)** | distance kept from centre, purr strength, heart frequency, tap responsiveness |
-| Exercise | tilt-walking distance, jumps, play sessions | daily reset | a filling bar IS his tiredness: pleasantly worn out, slower pace, longer loafs, earlier naps; the morning reset is a fresh, spry cat |
+| Gauge | Up | Down |
+|---|---|---|
+| Play | yarn-ball sessions (bats and pounces) | drains in ~5 min; faster while he sleeps |
+| Food | eating (a bowl is a full meal) | drains in ~6 min; play works up an appetite |
+| Love | petting (one gauge row per 5 s of purring), play, making peace | drains in ~5 min; visible poop; **being scared (shake)** |
+| Exercise | **walking and dashing only** — never scares, never pounces | drains in ~5 min; faster while he sleeps |
+| Sleep | fills while HE sleeps (~75 s nap fills it) | drains in ~6 min awake |
 
-There is no separate energy stat — a full exercise bar implies a cat who
-wants his sleep, and the daily reset hands him a new morning. Petting fills
-the heart at a deliberate, readable rate: one gauge row per 5 seconds of
-genuine (purring) petting — 25 s of attention fills it from empty.
+**His sleep ends the episode**: when the sleep gauge completes, everything
+else resets to zero — a fresh session on wake. Behaviour reads the gauges:
+a filling exercise bar is a pleasantly worn-out cat (slower pace, longer
+loafs, earlier naps); a hungry cat lingers where food appears; an aloof cat
+wanders and ignores taps; a loved one rumbles harder and rains hearts.
 
 ## HUD (no menu)
 
 Four always-visible icons in the sky — world objects are touchable, and so
 is the HUD. No navigation state, no open/close.
 
-- **Top-left cluster**: yarn ball (Play), fish (Food), one heart
-  (Affection), dumbbell (Exercise). **Top-right**: battery.
-- **Every icon is a vertical gauge**: its art exists in quiet grey and
-  fills bottom-up with its true colours as the value rises — the fill IS
-  the reading, no separate bars needed at a glance.
-  - **Fish** (fills with food) → tap drops a bowl into the world; he
-    notices, trots over, eats (groom/slurp reuse), and washes up after
-    dinner like a real cat. One bowl at a time; an untouched bowl
-    despawns. **A full fish refuses the tap** — no dinner for a fed cat.
-  - **Yarn ball** (fills with today's play) → tap starts a 60 s play
-    session: paw-batting and pouncing jumps, the **only** place those
-    animations appear. Play scores double exercise and extra affection.
-    **A full ball refuses the tap** — he has had his games today; the
-    gauge resets with the new day.
-  - **Heart** (fills with affection) → tap for the full-screen status
-    page: three stat bars (F / A / X) + battery + poop count, tap to exit.
-  - **Dumbbell** (fills with exercise) → pure gauge; full means pleasantly
-    worn out and ready for his nap.
-  - **Battery** → the existing full-screen gauge on tap.
+- **One row**: yarn ball (Play), fish (Food), heart (Love), dumbbell
+  (Exercise), moon (Sleep) — all 6 cells tall, each a single colour with
+  white as the only accent, no outlines. **Battery is a one-pixel hairline
+  along the very top edge**, its length the charge.
+- **Every icon is a vertical gauge**: grey art that fills bottom-up with
+  its colour — the fill IS the reading.
+  - **Fish** → tap drops a bowl; he trots over, eats, and washes his paw
+    after dinner (the only time that animation appears). One bowl at a
+    time. A full fish refuses the tap.
+  - **Yarn ball** → tap starts a 60 s play session (paw-batting and
+    pounces — the only place those animations live). Yarn balls can keep
+    coming, but **only one at a time and never while food is out**.
+  - **Heart, dumbbell, moon** → any of them opens the **menu screen**:
+    each gauge with its word (PLAY / FOOD / LOVE / EXERCISE / SLEEP) and
+    its streak — how many days in a row that gauge reached full — plus
+    battery % and the poop count. Tap to exit.
 - Icon hit-boxes take priority over the side-zone leap taps (same precedence
   the battery tap uses today).
 - **Buttons** do exactly one thing: wake the device. PWR's 6-second hardware
@@ -81,7 +81,13 @@ Two distinct off-screen states:
 - **Scares escalate.** Each scare without a reconciliation between pushes
   his hiding spot farther away — up to the loop's maximum (half the world
   from where you're looking) — and costs more affection. Scaring him while
-  he is already hiding re-hides him farther immediately.
+  he is already hiding still earns you one hiss where he stands, then he
+  bolts farther.
+- **The search is a chase.** While he hides, whenever the panning camera
+  has him in view he keeps walking away from you — tap him mid-stride to
+  bring him out. Soft footfalls tell you the search is getting warm. Once
+  tapped, the camera snaps back and centred behaviour resumes within a
+  moment of him being on screen.
 - **Reconciliation is purr-gated.** Finding him and tapping brings him out
   wary — the fear level persists. To truly make peace, pet him at his
   hiding spot (or after he emerges) until he actually purrs: that resets

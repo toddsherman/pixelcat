@@ -133,7 +133,7 @@ int main(void)
 {
     // --- Feed: fish icon tap spawns the bowl; he walks over and eats ---
     fresh_present_cat();
-    cat_set_stats(35, 62, 20, 0);
+    cat_set_stats(35, 62, 20, 0, 50);
     tap(CELL(13), CELL(4));  // fish icon zone
     int ate = 0, slurps = 0, post_slurps = 0;
     for (int i = 0; i < (int)(14.0f / DT); i++) {
@@ -155,7 +155,7 @@ int main(void)
 
     // --- Play: ball icon tap starts a session with bats or pounces ---
     fresh_present_cat();
-    cat_set_stats(80, 62, 20, 0);
+    cat_set_stats(80, 62, 20, 0, 50);
     tap(CELL(4), CELL(4));  // yarn ball icon zone
     int hits = 0;
     for (int i = 0; i < (int)(20.0f / DT); i++) {
@@ -167,7 +167,7 @@ int main(void)
 
     // --- Full gauges gate their taps: no dinner for a fed cat ---
     fresh_present_cat();
-    cat_set_stats(100, 62, 20, 0);
+    cat_set_stats(100, 62, 20, 0, 50);
     tap(CELL(13), CELL(4));
     int ate_full = 0;
     for (int i = 0; i < (int)(12.0f / DT); i++) {
@@ -176,16 +176,19 @@ int main(void)
     }
     expect(ate_full == 0, "a full fish gauge refuses the tap");
 
-    // --- ...and no new ball once he has had his games ---
+    // --- ...and no yarn ball while dinner is on the ground ---
     fresh_present_cat();
-    cat_set_stats(80, 62, 20, 100);
-    tap(CELL(4), CELL(4));
-    int hits_full = 0;
-    for (int i = 0; i < (int)(8.0f / DT); i++) {
+    cat_set_stats(35, 62, 20, 100, 50);
+    tap(CELL(13), CELL(4));  // bowl drops
+    tap(CELL(4), CELL(4));   // ball tap must be refused: food is out
+    int hits_food_out = 0, ate_anyway = 0;
+    for (int i = 0; i < (int)(14.0f / DT); i++) {
         idle_frames(1);
-        hits_full += cat_take_play_hit() ? 1 : 0;
+        hits_food_out += cat_take_play_hit() ? 1 : 0;
+        ate_anyway += cat_take_eat() ? 1 : 0;
     }
-    expect(hits_full == 0, "a full play gauge refuses the ball");
+    expect(hits_food_out == 0, "no yarn ball while food is out");
+    expect(ate_anyway == 1, "dinner proceeds undisturbed");
 
     // --- Poop: tap cleans it ---
     fresh_present_cat();
@@ -322,11 +325,11 @@ int main(void)
 
     // --- Affection shows in the purr ---
     fresh_present_cat();
-    cat_set_stats(80, 100, 50, 0);
+    cat_set_stats(80, 100, 50, 0, 50);
     pet_until_purr(2.0f, 5.0f);  // never reached: just pet for 5 s
     const float purr_devoted = cat_purr_level();
     fresh_present_cat();
-    cat_set_stats(80, 0, 50, 0);
+    cat_set_stats(80, 0, 50, 0, 50);
     pet_until_purr(2.0f, 5.0f);
     const float purr_aloof = cat_purr_level();
     expect(purr_devoted > purr_aloof + 0.1f,
@@ -336,7 +339,7 @@ int main(void)
     int fresh_frames = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 0, 0);  // a fresh morning cat
+        cat_set_stats(80, 60, 0, 0, 50);  // a fresh morning cat
         cat_touch_t t = {0};
         cat_update(DT, &t, 8.0f, 0.0f);
         while (cat_state() != CAT_HIDING && fresh_frames < 500) {
@@ -347,7 +350,7 @@ int main(void)
     int worn_frames = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 100, 0);  // his whole day already had
+        cat_set_stats(80, 60, 100, 0, 50);  // his whole day already had
         cat_touch_t t = {0};
         cat_update(DT, &t, 8.0f, 0.0f);
         while (cat_state() != CAT_HIDING && worn_frames < 500) {
@@ -362,13 +365,13 @@ int main(void)
     int doze_worn = 0, doze_fresh = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 100, 0);
+        cat_set_stats(80, 60, 100, 0, 50);
         while (cat_state() != CAT_SLEEPING && doze_worn < 4000) {
             idle_frames(1);
             doze_worn++;
         }
         fresh_present_cat();
-        cat_set_stats(80, 60, 0, 0);
+        cat_set_stats(80, 60, 0, 0, 50);
         while (cat_state() != CAT_SLEEPING && doze_fresh < 4000) {
             idle_frames(1);
             doze_fresh++;
@@ -379,7 +382,7 @@ int main(void)
 
     // --- Hunger pulls him back to where food appears ---
     fresh_present_cat();
-    cat_set_stats(80, 60, 50, 0);
+    cat_set_stats(80, 60, 50, 0, 50);
     cat_debug_force(50);  // bowl: establishes the food spot
     for (int i = 0; i < (int)(14.0f / DT); i++) {
         idle_frames(1);
@@ -394,7 +397,7 @@ int main(void)
     }
     expect(world_dist(cat_debug_world(), spot) > 150.0f,
            "the tilt carried him away from the spot");
-    cat_set_stats(10, 60, 50, 0);
+    cat_set_stats(10, 60, 50, 0, 50);
     int returned = 0;
     for (int i = 0; i < (int)(60.0f / DT) && !returned; i++) {
         idle_frames(1);
@@ -404,15 +407,36 @@ int main(void)
     }
     expect(returned, "a hungry cat drifts back to where food appears");
 
-    // --- The heart fills one gauge row (20 pts) per 5 s of petting ---
+    // --- The heart fills roughly one gauge row per 5 s of petting ---
     stats_reset();
     const float a0 = stats_get()->affection;
     for (int i = 0; i < (int)(5.0f / DT); i++) {
         stats_tick(DT, false, 0.8f);  // purring under a stroke
     }
     const float gained = stats_get()->affection - a0;
-    expect(gained > 18.0f && gained < 22.0f,
-           "5 s of petting fills one heart row");
+    expect(gained > 15.0f && gained < 21.0f,
+           "5 s of petting fills about one heart row");
+
+    // --- Session pacing: gauges drain within a few minutes ---
+    stats_reset();
+    stats_on_eat(100.0f);
+    for (int i = 0; i < (int)(300.0f / DT); i++) {
+        stats_tick(DT, false, 0.0f);
+    }
+    expect(stats_get()->food < 30.0f && stats_get()->food > 2.0f,
+           "an untouched food gauge drains over ~5 minutes");
+    expect(stats_get()->affection < 1.0f,
+           "an ignored heart is empty within 5 minutes");
+
+    // --- His sleep completing rolls the episode ---
+    stats_reset();
+    stats_on_eat(100.0f);
+    for (int i = 0; i < (int)(60.0f / DT); i++) {
+        stats_tick(DT, true, 0.0f);  // he naps; sleep fills from 50
+    }
+    expect(stats_get()->sleep > 99.0f, "his nap fills the sleep gauge");
+    expect(stats_get()->food == 0.0f && stats_get()->play == 0.0f,
+           "a completed sleep resets the other gauges");
 
     printf(s_failures ? "\n%d FAILURES\n" : "\nall tests pass\n", s_failures);
     return s_failures ? 1 : 0;

@@ -106,6 +106,8 @@ static uint8_t char_color(char ch)
         case 'b': return C_POOP;
         case 'g': return C_BATT_G;
         case 'o': return C_ORANGE;
+        case 'y': return C_BATT_Y;
+        case 'B': return C_BATT_B;
         default: return C_BG;
     }
 }
@@ -168,39 +170,54 @@ static const char *const POOF[] = {
     "W.W.W",
 };
 
-// HUD icons, top-left: yarn ball (play), fish (food), heart (affection),
-// dumbbell (exercise). All 5 cells tall on the same top line; each renders
-// as a gauge — grey art filled bottom-up with its true colours.
+// HUD icons: yarn ball (play), fish (food), heart (affection), dumbbell
+// (exercise), moon (his sleep). All 6 cells tall on the same top line,
+// each a single colour with white as the only accent — no outlines — and
+// each rendered as a gauge: grey art filled bottom-up with its colour.
 static const char *const ICON_BALL[] = {
-    ".###....",
-    "#rrW#...",
-    "#rWr#...",
-    "#Wrr#rrr",  // the loose thread trails off to the right
-    ".rrr....",
+    ".rrrr....",
+    "rrrrrW...",
+    "rrrrWr...",
+    "rrrWrrrrr",  // the loose thread trails off to the right
+    "rrWrrr...",
+    ".rrrr....",
 };
 
+// The fish is vivid blue (C_SLEEP was a near-match for the sky).
 static const char *const ICON_FISH[] = {
-    "..####..#",
-    ".#zzzz##z",
-    "#zWzzzzzz",
-    ".#zzzz##z",
-    "..zzzz..z",
+    "..BBBB...B",
+    ".BBBBBB.BB",
+    "BWBBBBBBB.",
+    "BBBBBBBBB.",
+    ".BBBBBB.BB",
+    "..BBBB...B",
 };
 
 static const char *const ICON_HEART[] = {
-    ".r.r.",
-    "rrrrr",
-    "rrrrr",
-    ".rrr.",
-    "..r..",
+    ".rr.rr.",
+    "rrrrrrr",
+    "rrrrrrr",
+    ".rrrrr.",
+    "..rrr..",
+    "...r...",
 };
 
 static const char *const ICON_EXER[] = {
     ".oo...oo.",
     "ooo...ooo",
     "ooooooooo",
+    "ooooooooo",
     "ooo...ooo",
     ".oo...oo.",
+};
+
+static const char *const ICON_MOON[] = {
+    "..yyyy.",
+    ".yy...W",
+    "yy.....",
+    "yy.....",
+    ".yy....",
+    "..yyyy.",
 };
 
 // Small overlay sprites are stamped unflipped with their own widths.
@@ -266,7 +283,7 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
     [M_ABSENT] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 3.5f, true},
     [M_ENTER] = {ANIM_TROT, ANIM_TROT_N, 12.0f, true},
     [M_FLEE] = {ANIM_LEAP, ANIM_LEAP_N, 20.0f, true},
-    [M_HIDDEN] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 2.5f, true},
+    [M_HIDDEN] = {ANIM_TROT, ANIM_TROT_N, 8.0f, true},
     [M_EMERGE] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 3.5f, true},
 };
 
@@ -329,8 +346,7 @@ static struct {
     float heart_spawn;
     int batt_pct;        // -1 until the first reading arrives
     bool batt_chg;
-    bool batt_screen;    // full-screen battery view (tap the corner bar)
-    bool status_screen;  // full-screen stat page (tap the hearts)
+    bool status_screen;  // the menu screen (tap heart, dumbbell or moon)
     int daypart;         // BG_* variant index chosen by the clock
 
     // World objects and sessions (Phase 2).
@@ -348,7 +364,8 @@ static struct {
     int goal_kind;       // 0 none, 1 bowl, 2 ball
     float goal_stop;     // world x he trots toward
     bool eat_evt, play_evt, clean_evt;
-    int st_f, st_a, st_x, st_p;  // stats pushed in for HUD + status page
+    int st_f, st_a, st_x, st_p, st_s;  // gauge values pushed in by main
+    int streaks[5];                    // play, food, love, exercise, sleep
 
     // Camera and trust (Phase 3). Normally the camera is pinned to the cat;
     // absence, fleeing and hiding set it free.
@@ -489,8 +506,11 @@ static void drop_bowl(void)
     if (s.bowl_alive) {
         return;  // one bowl at a time
     }
+    // Relative to what you can see: his position normally, the camera's
+    // view if he is off wandering or hiding.
+    const float base = s.cam_free ? s.cam_x : s.world_x;
     const float dir = s.facing_left ? -1.0f : 1.0f;
-    s.bowl_x = wrapf(s.world_x + dir * 13.0f * PIX_SCALE);
+    s.bowl_x = wrapf(base + dir * 13.0f * PIX_SCALE);
     s.bowl_alive = true;
     s.bowl_fresh = true;
     s.bowl_ttl = 90.0f;
@@ -504,8 +524,9 @@ static void drop_ball(void)
     if (s.ball_alive) {
         return;
     }
+    const float base = s.cam_free ? s.cam_x : s.world_x;
     const float dir = s.facing_left ? -1.0f : 1.0f;
-    s.ball_x = wrapf(s.world_x + dir * 12.0f * PIX_SCALE);
+    s.ball_x = wrapf(base + dir * 12.0f * PIX_SCALE);
     s.ball_vx = 0.0f;
     s.ball_alive = true;
     s.play_left = 60.0f;
@@ -651,7 +672,7 @@ void cat_init(void)
     s.pos_x = CENTRE;
     s.facing_left = true;
     s.batt_pct = -1;
-    s.st_f = s.st_a = s.st_x = s.st_p = 100;  // until main pushes values
+    s.st_f = s.st_a = s.st_x = s.st_p = s.st_s = 100;  // until main pushes
     s.rng = 0x9E3779B9;
     s.entice = -1;
     // Every boot is a wake: the park starts empty until something calls him.
@@ -726,46 +747,34 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const int side_of = (s.last_x < RUN_ZONE_L) ? -1 : (s.last_x > RUN_ZONE_R) ? 1 : 0;
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
 
-    // The battery and status views swallow all interaction: one tap exits.
-    const bool tap_on_batt = released_tap && s.last_x >= 41.0f &&
-                             s.last_y <= 9.0f;
-    if (s.batt_screen || s.status_screen) {
+    // The menu screen swallows all interaction: one tap exits.
+    if (s.status_screen) {
         if (released_tap) {
-            s.batt_screen = false;
             s.status_screen = false;
         }
-        // Let any purr fade out while a gauge is up.
+        // Let any purr fade out while the menu is up.
         s.purr = fmaxf(0.0f, s.purr - PET_RAMP_DOWN * dt);
         s.was_down = touch->down;
         return;
     }
-    if (tap_on_batt && s.batt_pct >= 0) {
-        s.batt_screen = true;
-        s.was_down = touch->down;
-        return;
-    }
 
-    // HUD gauge row (top-left): ball, fish, heart, dumbbell. Hit-boxes
-    // outrank every world gesture, same as the battery corner. A full
-    // gauge means its tap does nothing: no dinner for a fed cat, no new
-    // ball once he has had his games.
+    // HUD gauge row: ball, fish, heart, dumbbell, moon. Hit-boxes outrank
+    // every world gesture. Heart, dumbbell and moon all open the menu; the
+    // fish refuses a tap when he is already fed; a new yarn ball needs the
+    // old one gone and no dinner on the ground.
     bool tap_claimed = false;
-    if (released_tap && s.last_y < 9.0f && s.last_x < 41.0f) {
-        if (s.last_x >= 29.0f) {
-            // The dumbbell is a pure gauge; the tap just doesn't fall
-            // through to the world.
-        } else if (s.last_x >= 22.0f) {
+    if (released_tap && s.last_y < 10.0f) {
+        if (s.last_x >= 24.0f) {
             s.status_screen = true;
             s.was_down = touch->down;
             return;
-        } else if (s.last_x >= 12.0f) {
+        }
+        if (s.last_x >= 12.0f) {
             if (s.st_f < 95) {
                 drop_bowl();
             }
-        } else {
-            if (s.st_p < 95) {
-                drop_ball();
-            }
+        } else if (!s.ball_alive && !(s.bowl_alive && s.bowl_fresh)) {
+            drop_ball();
         }
         tap_claimed = true;
     }
@@ -848,11 +857,12 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 
     // --- global triggers, in priority order ---
     if (shake > SHAKE_HISS_THRESHOLD && s.mode == M_HIDDEN) {
-        // Scaring a cat that is already hiding re-hides him farther, now.
+        // Scaring a cat that is already hiding: he still gives you one hiss
+        // where he stands, then bolts farther.
         s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
         s.hiss = true;
-        s.flee_dir = (frand01() < 0.5f) ? -1 : 1;
-        place_hide();
+        s.wary = true;
+        enter(M_ANGRY);
     } else if (shake > SHAKE_HISS_THRESHOLD && s.mode != M_ANGRY &&
                !s.cam_free) {
         s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
@@ -939,14 +949,25 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             break;
         }
 
-        case M_HIDDEN:
-            break;  // he sits tight; the searching is yours to do
+        case M_HIDDEN: {
+            // If the search camera has him in view he keeps walking away —
+            // finding him is a chase, not a discovery of a statue.
+            const float d = world_delta(s.cam_x, s.world_x);
+            if (fabsf(d) < (CENTRE + SPRITE_W) * PIX_SCALE) {
+                const float dir = (d >= 0.0f) ? 1.0f : -1.0f;
+                s.facing_left = dir < 0.0f;
+                s.world_x = wrapf(s.world_x +
+                                  dir * TROT_SPEED * 0.6f * PIX_SCALE * dt);
+            }
+            break;
+        }
 
         case M_EMERGE: {
-            // The camera eases back to following him.
+            // The camera snaps back to following him: as soon as he is on
+            // screen, centred behaviour is moments away.
             const float d = world_delta(s.cam_x, s.world_x);
-            const float k = 1.0f - expf(-dt * 3.0f);
-            if (fabsf(d) < 3.0f) {
+            const float k = 1.0f - expf(-dt * 5.0f);
+            if (fabsf(d) < 8.0f) {
                 s.cam_x = s.world_x;
                 s.cam_free = false;
                 to_passive();
@@ -1275,6 +1296,11 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             (frame == 1 || frame == 5)) {
             s.step = true;
         }
+        if (s.mode == M_HIDDEN && (frame == 1 || frame == 5) &&
+            fabsf(world_delta(s.cam_x, s.world_x)) <
+                (CENTRE + SPRITE_W) * PIX_SCALE) {
+            s.step = true;  // soft footfalls when the search gets warm
+        }
         if (s.mode == M_FLEE && frame == 0) {
             s.dash = s.flee_dir;  // a whoosh per panicked leap
         }
@@ -1356,12 +1382,21 @@ float cat_take_walked(void)
     return v;
 }
 
-void cat_set_stats(int food, int affection, int exercise, int play)
+void cat_set_stats(int food, int affection, int exercise, int play,
+                   int sleep_v)
 {
     s.st_f = food;
     s.st_a = affection;
     s.st_x = exercise;
     s.st_p = play;
+    s.st_s = sleep_v;
+}
+
+void cat_set_streaks(const int streaks[5])
+{
+    for (int i = 0; i < 5; i++) {
+        s.streaks[i] = streaks[i];
+    }
 }
 
 void cat_spawn_poop(void)
@@ -1621,27 +1656,17 @@ static void compose(void)
         }
     }
 
-    // HUD, top-left: four gauges — yarn ball (play), fish (food), heart
-    // (affection), dumbbell (exercise) — all 5 cells tall, all 2 cells
-    // below the top edge. Each fills bottom-up with its stat.
-    stamp_gauge(3, 2, ICON_BALL, 5, s.st_p);
-    stamp_gauge(13, 2, ICON_FISH, 5, s.st_f);
-    stamp_gauge(24, 2, ICON_HEART, 5, s.st_a);
-    stamp_gauge(31, 2, ICON_EXER, 5, s.st_x);
+    // HUD: five gauges — yarn ball (play), fish (food), heart (affection),
+    // dumbbell (exercise), moon (his sleep) — all 6 cells tall, 2 below the
+    // top edge. Each fills bottom-up with its stat.
+    stamp_gauge(2, 2, ICON_BALL, 6, s.st_p);
+    stamp_gauge(13, 2, ICON_FISH, 6, s.st_f);
+    stamp_gauge(25, 2, ICON_HEART, 6, s.st_a);
+    stamp_gauge(34, 2, ICON_EXER, 6, s.st_x);
+    stamp_gauge(45, 2, ICON_MOON, 6, s.st_s);
 
-    // Battery, top right, on the same line at the same height: a closed
-    // 9x5 rectangle with 7 fill cells.
+    // Battery: a hairline along the very top edge, its length the charge.
     if (s.batt_pct >= 0) {
-        const int bx = 43, by = 2;
-        for (int x = 0; x < 9; x++) {
-            px(bx + x, by, C_OUT);
-            px(bx + x, by + 4, C_OUT);
-        }
-        for (int y = 1; y < 4; y++) {
-            px(bx, by + y, C_OUT);
-            px(bx + 8, by + y, C_OUT);
-        }
-        const int fill = (s.batt_pct * 7 + 50) / 100;
         uint8_t col = C_BATT_G;
         if (s.batt_chg) {
             col = C_BATT_B;
@@ -1650,24 +1675,28 @@ static void compose(void)
         } else if (s.batt_pct <= 40) {
             col = C_BATT_Y;
         }
-        for (int y = 1; y < 4; y++) {
-            for (int x = 0; x < 7; x++) {
-                px(bx + 1 + x, by + y, (x < fill) ? col : C_DARK);
-            }
+        const int fill = (s.batt_pct * CANVAS_W + 50) / 100;
+        for (int x = 0; x < fill; x++) {
+            px(x, 0, col);
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Full-screen battery view: black screen, a large gauge, percent below.
+// The menu screen and its little blocky font.
 // ---------------------------------------------------------------------------
 
 // 3x5 font, rows top to bottom, bit 2 = left pixel. Digits, %, then the
-// letters the status page needs.
-enum { GL_PCT = 10, GL_F, GL_A, GL_E, GL_X, GL_B, GL_P };
+// letters the menu needs. GL_O is just the zero digit.
+enum {
+    GL_O = 0,
+    GL_PCT = 10,
+    GL_F, GL_A, GL_E, GL_X, GL_B, GL_P,
+    GL_L, GL_Y, GL_D, GL_V, GL_R, GL_C, GL_I, GL_S,
+};
 
-static const uint8_t k_font[17][5] = {
-    {7, 5, 5, 5, 7},  // 0
+static const uint8_t k_font[25][5] = {
+    {7, 5, 5, 5, 7},  // 0 / O
     {2, 6, 2, 2, 7},  // 1
     {7, 1, 7, 4, 7},  // 2
     {7, 1, 7, 1, 7},  // 3
@@ -1684,6 +1713,14 @@ static const uint8_t k_font[17][5] = {
     {5, 5, 2, 5, 5},  // X
     {6, 5, 6, 5, 6},  // B
     {6, 5, 6, 4, 4},  // P
+    {4, 4, 4, 4, 7},  // L
+    {5, 5, 2, 2, 2},  // Y
+    {6, 5, 5, 5, 6},  // D
+    {5, 5, 5, 5, 2},  // V
+    {6, 5, 6, 5, 5},  // R
+    {7, 4, 4, 4, 7},  // C
+    {7, 2, 2, 2, 7},  // I
+    {7, 4, 7, 1, 7},  // S
 };
 
 static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
@@ -1714,100 +1751,66 @@ static int draw_number(int x, int y, int v, uint8_t col)  // returns next x
     return x;
 }
 
-// Full-screen status page (tap the hearts): three labelled stat bars — all
-// aspiring to be full — then battery and the poop count along the bottom.
+static void draw_word(int x, int y, const uint8_t *glyphs, int n,
+                      uint8_t col)
+{
+    for (int i = 0; i < n; i++) {
+        draw_glyph(x, y, glyphs[i], col);
+        x += 4;
+    }
+}
+
+// The menu (tap the heart, dumbbell or moon): each gauge with its word and
+// its streak — how many days in a row that gauge reached full.
 static void compose_status(void)
 {
     memset(s_canvas, C_BLACK, sizeof(s_canvas));
 
+    static const uint8_t W_PLAY[] = {GL_P, GL_L, GL_A, GL_Y};
+    static const uint8_t W_FOOD[] = {GL_F, GL_O, GL_O, GL_D};
+    static const uint8_t W_LOVE[] = {GL_L, GL_O, GL_V, GL_E};
+    static const uint8_t W_EXER[] = {GL_E, GL_X, GL_E, GL_R, GL_C, GL_I,
+                                     GL_S, GL_E};
+    static const uint8_t W_SLEEP[] = {GL_S, GL_L, GL_E, GL_E, GL_P};
+
     const struct {
-        int glyph;
+        const char *const *art;
+        const uint8_t *word;
+        int wn;
         int val;
-    } rows[3] = {
-        {GL_F, s.st_f}, {GL_A, s.st_a}, {GL_X, s.st_x},
+        int streak;
+    } rows[5] = {
+        {ICON_BALL, W_PLAY, 4, s.st_p, s.streaks[0]},
+        {ICON_FISH, W_FOOD, 4, s.st_f, s.streaks[1]},
+        {ICON_HEART, W_LOVE, 4, s.st_a, s.streaks[2]},
+        {ICON_EXER, W_EXER, 8, s.st_x, s.streaks[3]},
+        {ICON_MOON, W_SLEEP, 5, s.st_s, s.streaks[4]},
     };
 
-    const int bx = 8, bw = 34;
-    for (int i = 0; i < 3; i++) {
-        const int by = 5 + i * 10;
-        const int val = (rows[i].val < 0) ? 0 : rows[i].val;
-        draw_glyph(3, by + 1, rows[i].glyph, C_WHITE);
-        for (int x = 0; x < bw; x++) {
-            px(bx + x, by, C_WHITE);
-            px(bx + x, by + 6, C_WHITE);
+    for (int i = 0; i < 5; i++) {
+        const int by = 1 + i * 8;
+        stamp_gauge(1, by, rows[i].art, 6, rows[i].val);
+        draw_word(13, by + 1, rows[i].word, rows[i].wn, C_WHITE);
+        // Streak, right-aligned as "NX" (days in a row at full).
+        int v = rows[i].streak;
+        if (v > 99) {
+            v = 99;
         }
-        for (int y = 1; y < 6; y++) {
-            px(bx, by + y, C_WHITE);
-            px(bx + bw - 1, by + y, C_WHITE);
-        }
-        const uint8_t col = (val > 50) ? C_BATT_G
-                            : (val > 25) ? C_BATT_Y
-                                         : C_BATT_R;
-        const int fill = (val * (bw - 2) + 50) / 100;
-        for (int y = 1; y < 6; y++) {
-            for (int x = 0; x < fill; x++) {
-                px(bx + 1 + x, by + y, col);
-            }
-        }
-        draw_number(bx + bw + 2, by + 1, val, C_WHITE);
+        const int digits = (v >= 10) ? 2 : 1;
+        const int sx = CANVAS_W - 3 - digits * 4;
+        const int nx = draw_number(sx, by + 1, v, C_UI_DIM);
+        draw_glyph(nx, by + 1, GL_X, C_UI_DIM);
     }
 
     // Bottom line: battery left, poops right.
-    const int by = 38;
-    draw_glyph(4, by, GL_B, C_WHITE);
+    const int by = 40;
+    draw_glyph(1, by, GL_B, C_WHITE);
     if (s.batt_pct >= 0) {
-        const int nx = draw_number(9, by, s.batt_pct, C_WHITE);
+        const int nx = draw_number(6, by, s.batt_pct, C_WHITE);
         draw_glyph(nx, by, GL_PCT, C_WHITE);
     }
     draw_glyph(38, by, GL_P, C_WHITE);
     draw_number(43, by, cat_poop_count(), C_WHITE);
-}
-
-static void compose_battery(void)
-{
-    memset(s_canvas, C_BLACK, sizeof(s_canvas));
-
-    const int pct = (s.batt_pct >= 0) ? s.batt_pct : 0;
-    uint8_t col = C_BATT_G;
-    if (s.batt_chg) {
-        col = C_BATT_B;
-    } else if (pct <= 15) {
-        col = C_BATT_R;
-    } else if (pct <= 40) {
-        col = C_BATT_Y;
-    }
-
-    // Gauge: 32x8 outline centred, 30x6 fill inside.
-    const int bx = (CANVAS_W - 32) / 2, by = 22;
-    for (int x = 0; x < 32; x++) {
-        px(bx + x, by, C_WHITE);
-        px(bx + x, by + 7, C_WHITE);
-    }
-    for (int y = 1; y < 7; y++) {
-        px(bx, by + y, C_WHITE);
-        px(bx + 31, by + y, C_WHITE);
-    }
-    const int fill = (pct * 30 + 50) / 100;
-    for (int y = 1; y < 7; y++) {
-        for (int x = 0; x < fill; x++) {
-            px(bx + 1 + x, by + y, col);
-        }
-    }
-
-    // "NN%" centred below.
-    int glyphs[4], n = 0;
-    if (pct >= 100) glyphs[n++] = 1;
-    if (pct >= 100) glyphs[n++] = 0;
-    if (pct < 100 && pct >= 10) glyphs[n++] = pct / 10;
-    if (pct < 10) glyphs[n++] = pct;
-    else glyphs[n++] = pct % 10;
-    glyphs[n++] = 10;  // %
-    const int tw = n * 4 - 1;
-    int tx = (CANVAS_W - tw) / 2;
-    for (int i = 0; i < n; i++) {
-        draw_glyph(tx, by + 11, glyphs[i], C_WHITE);
-        tx += 4;
-    }
 }
 
 static int s_flush_errors;
@@ -1819,9 +1822,7 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
-    if (s.batt_screen) {
-        compose_battery();
-    } else if (s.status_screen) {
+    if (s.status_screen) {
         compose_status();
     } else {
         compose();
@@ -1846,9 +1847,8 @@ void cat_render(void)
             // fixes the logical x cell; walking panel columns descends the
             // logical y cells (panel x = 367 maps to logical y = 0).
             const int lx_cell = (y0 + row) / PIX_SCALE;
-            const uint16_t *pal = s_pal565[(s.batt_screen || s.status_screen)
-                                               ? BG_DAY
-                                               : s.daypart];
+            const uint16_t *pal =
+                s_pal565[s.status_screen ? BG_DAY : s.daypart];
             for (int pxb = 0; pxb < LCD_H_RES / PIX_SCALE; pxb++) {
                 const int ly_cell = (LCD_H_RES / PIX_SCALE - 1) - pxb;
                 const uint8_t ci = s_canvas[ly_cell * CANVAS_W + lx_cell];

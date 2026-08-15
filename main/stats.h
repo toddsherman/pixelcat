@@ -3,21 +3,25 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// The care stats (GAME_DESIGN.md): three 0..100 values simulated
-// continuously while the device runs and caught up through offline gaps at
-// boot. The simulation half is pure C (no RTOS, no hardware) so it can also
-// run in a host harness; persistence lives behind ESP_PLATFORM.
+// The care gauges: five 0..100 values tuned to a ~5 minute session — do
+// everything positive once and every gauge fills; leave him be and they all
+// drain within a few minutes. His sleep ends the episode: while he sleeps
+// the sleep gauge fills (and exercise/play deplete quickly), and a completed
+// sleep resets everything else to zero — a fresh session on wake.
 //
-// Every bar aspires to be full: fed, loved, exercised. There is no separate
-// energy stat — a filled exercise bar IS a tired cat (he gets sleepy as it
-// fills and wakes up fresh when it resets with the new day).
+// The simulation half is pure C (no RTOS, no hardware) so it also runs in
+// the host harness; persistence lives behind ESP_PLATFORM.
 
 typedef struct {
     float food;       // 100 fed .. 0 hungry
-    float affection;  // 100 devoted .. 0 aloof
-    float exercise;   // today's activity; full = satisfied and sleepy
-    float play;       // today's play; full = no more yarn balls today
+    float affection;  // 100 loved .. 0 aloof
+    float exercise;   // walking and dashing; drains in minutes
+    float play;       // yarn-ball sessions; drains in minutes
+    float sleep;      // fills while HE sleeps; full = the day rolls over
 } stats_t;
+
+// Menu order, for gauges and streaks alike.
+enum { ST_PLAY = 0, ST_FOOD, ST_LOVE, ST_EXER, ST_SLEEP, ST_COUNT };
 
 void stats_reset(void);
 const stats_t *stats_get(void);
@@ -26,13 +30,17 @@ const stats_t *stats_get(void);
 // device) is in his sleep animation; purr feeds petting affection.
 void stats_tick(float dt, bool asleep, float purr);
 
-// Event feeds from the cat engine.
+// Event feeds from the cat engine. Exercise accrues ONLY from walking and
+// dashing (stats_on_walk / stats_on_dash) — never from scares or pounces.
 void stats_on_walk(float logical_px);
-void stats_on_jump(void);         // any leap or big jump launch
+void stats_on_dash(void);         // a deliberate leap
 void stats_on_scare(int level);   // the shake hiss; higher levels cost more
 void stats_on_reconcile(void);    // peace made after a scare
 void stats_on_eat(float amount);  // finishing a bowl
 void stats_on_play_hit(void);     // one paw-bat or pounce in a play session
+
+// Streaks: consecutive days on which a gauge reached full at least once.
+int stats_streak(int item);
 
 // Trust state riding along in the blob (owned by the cat engine).
 void stats_set_trust(int scare_level, bool wary);
@@ -47,12 +55,12 @@ void stats_set_poop_count(int n);
 int stats_poop_count(void);
 void stats_seed(uint32_t seed);
 
-// Local calendar date as y*10000+m*100+d. Resets exercise when it changes.
+// Local calendar date as y*10000+m*100+d. Rolls the streak ledger.
 void stats_note_date(int32_t day_serial);
 
-// Apply an offline gap of this many seconds, treated as the cat sleeping
-// somewhere: hunger sinks gently, energy recovers, affection fades a little.
-// Kindness caps keep a long absence at "hungry cat", never tragedy.
+// Apply an offline gap of this many seconds: he slept through it — the
+// sleep gauge fills, everything else drains (and resets once his sleep
+// completes), the poop timer keeps counting.
 void stats_offline(double seconds);
 
 #ifdef ESP_PLATFORM

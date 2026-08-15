@@ -572,10 +572,12 @@ bool cat_take_slurp(void) { return false; }
 bool cat_take_swipe(void) { return false; }
 int cat_take_dash(void) { return 0; }
 float cat_take_walked(void) { return 0.0f; }
-void cat_set_stats(int food, int affection, int exercise, int play)
+void cat_set_stats(int food, int affection, int exercise, int play,
+                   int sleep_v)
 {
-    (void)food; (void)affection; (void)exercise; (void)play;
+    (void)food; (void)affection; (void)exercise; (void)play; (void)sleep_v;
 }
+void cat_set_streaks(const int streaks[5]) { (void)streaks; }
 void cat_spawn_poop(void) {}
 int cat_poop_count(void) { return 0; }
 bool cat_take_eat(void) { return false; }

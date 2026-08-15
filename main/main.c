@@ -313,8 +313,7 @@ static void cat_task(void *arg)
             audio_step();
         }
         if (cat_take_boing()) {
-            audio_boing();
-            stats_on_jump();
+            audio_boing();  // pounces are play, not exercise
         }
         if (cat_take_slurp()) {
             audio_slurp();
@@ -325,10 +324,14 @@ static void cat_task(void *arg)
         const int dash_dir = cat_take_dash();
         if (dash_dir) {
             audio_dash(dash_dir);
-            stats_on_jump();
+            // Exercise comes from deliberate dashes only — panicked flight
+            // after a scare earns him nothing.
+            if (cat_state() != CAT_HIDING) {
+                stats_on_dash();
+            }
         }
         if (cat_take_eat()) {
-            stats_on_eat(45.0f);
+            stats_on_eat(100.0f);  // a bowl is a full meal
             stats_note_fed();
             stats_store_save();
         }
@@ -360,7 +363,13 @@ static void cat_task(void *arg)
             }
             const stats_t *sv = stats_get();
             cat_set_stats((int)sv->food, (int)sv->affection,
-                          (int)sv->exercise, (int)sv->play);
+                          (int)sv->exercise, (int)sv->play, (int)sv->sleep);
+            const int streaks[5] = {
+                stats_streak(ST_PLAY), stats_streak(ST_FOOD),
+                stats_streak(ST_LOVE), stats_streak(ST_EXER),
+                stats_streak(ST_SLEEP),
+            };
+            cat_set_streaks(streaks);
             stats_set_trust(cat_scare_level(), cat_wary());
 
             // Half-hour bucket bookkeeping, once the clock is trustworthy.
@@ -403,12 +412,12 @@ static void cat_task(void *arg)
             const stats_t *st = stats_get();
             float mic_rms, mic_amb;
             audio_mic_levels(&mic_rms, &mic_amb);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d PL %d | mic %.3f amb %.3f | fear %d%s",
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d PL %d S %d | mic %.3f amb %.3f | fear %d%s",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
                      (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2,
                      pcf_minutes_of_day(), daypart_for_log,
                      (int)st->food, (int)st->affection, (int)st->exercise,
-                     (int)st->play,
+                     (int)st->play, (int)st->sleep,
                      (double)mic_rms, (double)mic_amb,
                      cat_scare_level(), cat_wary() ? " wary" : "");
         }
