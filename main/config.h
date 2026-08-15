@@ -108,6 +108,21 @@
 #define PIN_I2S_BCLK 9
 #define PIN_I2S_WS 45
 #define PIN_I2S_DOUT 8
+#define PIN_I2S_DIN 10
 
 // Speaker power amplifier enable.
 #define PIN_POWER_AMP 46
+
+// ---------------------------------------------------------------------------
+// Microphone (ES8311 ADC, same duplex I2S port)
+// ---------------------------------------------------------------------------
+
+#define MIC_GAIN_DB 30.0f
+// A sharp sound triggers when a frame's RMS clears the adaptive ambient
+// floor by both a ratio and an absolute margin (rejects electrical hiss).
+#define MIC_TRIGGER_RATIO 3.5f
+#define MIC_TRIGGER_MIN 0.010f
+// Ambient floor EMA time constant, seconds.
+#define MIC_AMBIENT_TAU_S 4.0f
+// Detection stays gated this long after the speaker was last audible.
+#define MIC_GATE_HOLD_S 0.35f

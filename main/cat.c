@@ -581,6 +581,15 @@ int cat_poop_count(void) { return 0; }
 bool cat_take_eat(void) { return false; }
 bool cat_take_play_hit(void) { return false; }
 bool cat_take_poop_clean(void) { return false; }
+bool cat_take_summon(void) { return false; }
+bool cat_take_reconcile(void) { return false; }
+void cat_hear_sound(void) {}
+int cat_scare_level(void) { return 0; }
+bool cat_wary(void) { return false; }
+void cat_restore_trust(int scare_level, bool wary)
+{
+    (void)scare_level; (void)wary;
+}
 void cat_set_battery(int percent, bool charging) { (void)percent; (void)charging; }
 void cat_set_daypart(int variant) { (void)variant; }
 

@@ -1,10 +1,13 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 
-// ES8311 codec + speaker, running a continuous procedural purr synthesizer on
-// its own task. The cat's animation loop just sets the intensity.
+// ES8311 codec, full duplex: a continuous procedural purr synthesizer on its
+// own task, and the mic listening between frames for any sharp sound above
+// the ambient floor (gated while the speaker is audible).
 
 esp_err_t audio_init(i2c_master_bus_handle_t i2c_bus);
 
@@ -32,6 +35,12 @@ void audio_swipe(void);
 // A dash whoosh for leaps: pitch sweeps up for dir > 0 (right), down for
 // dir < 0 (left).
 void audio_dash(int dir);
+
+// True exactly once per detected sharp sound (a psst, a snap, a knock).
+bool audio_take_sound(void);
+
+// Latest mic frame RMS and the adaptive ambient floor, for telemetry.
+void audio_mic_levels(float *rms, float *ambient);
 
 // Stop the synth and close the codec (speaker amp off), for the idle sleep.
 void audio_stop(void);

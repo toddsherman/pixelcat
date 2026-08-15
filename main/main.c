@@ -149,13 +149,25 @@ static void cat_task(void *arg)
         stats_tick(dt, cat_state() == CAT_SLEEPING, cat_purr_level());
         stats_on_walk(cat_take_walked());
 
+        // The ear: any sharp sound summons an absent cat (and nothing else).
+        if (audio_take_sound()) {
+            cat_hear_sound();
+        }
+        if (cat_take_summon()) {
+            power_note_activity();
+        }
+        if (cat_take_reconcile()) {
+            stats_on_reconcile();
+            stats_store_save();
+        }
+
         audio_set_purr(cat_purr_level());
         if (cat_take_chirp()) {
             audio_chirp();
         }
         if (cat_take_hiss()) {
             audio_hiss();
-            stats_on_scare();
+            stats_on_scare(cat_scare_level());
             stats_store_save();
         }
         if (cat_take_step()) {
@@ -210,6 +222,7 @@ static void cat_task(void *arg)
             const stats_t *sv = stats_get();
             cat_set_stats((int)sv->hunger, (int)sv->affection,
                           (int)sv->energy, (int)sv->exercise);
+            stats_set_trust(cat_scare_level(), cat_wary());
             int yy, mm, dd;
             if (pcf_date(&yy, &mm, &dd)) {
                 daypart_for_log = daypart_for(yy, mm, dd, pcf_minutes_of_day());
@@ -230,11 +243,15 @@ static void cat_task(void *arg)
             int st1, st2;
             battery_raw(&st1, &st2);
             const stats_t *st = stats_get();
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | H %d A %d E %d X %d",
+            float mic_rms, mic_amb;
+            audio_mic_levels(&mic_rms, &mic_amb);
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | H %d A %d E %d X %d | mic %.3f amb %.3f | fear %d%s",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
                      (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2,
                      pcf_minutes_of_day(), daypart_for_log,
-                     (int)st->hunger, (int)st->affection, (int)st->energy, (int)st->exercise);
+                     (int)st->hunger, (int)st->affection, (int)st->energy, (int)st->exercise,
+                     (double)mic_rms, (double)mic_amb,
+                     cat_scare_level(), cat_wary() ? " wary" : "");
         }
 
         vTaskDelayUntil(&last_wake, period);
@@ -305,11 +322,13 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(750));
 
     cat_init();
-    // Any poops he left before the reboot come back, freshly placed.
+    // Any poops he left before the reboot come back, freshly placed, and
+    // unreconciled fear survives the night.
     for (int i = stats_poop_count(); i > 0; i--) {
         cat_spawn_poop();
     }
     stats_set_poop_count(cat_poop_count());
+    cat_restore_trust(stats_trust_level(), stats_trust_wary());
     power_note_activity();
 
     xTaskCreatePinnedToCore(cat_task, "cat", 6144, NULL, 5, NULL, 0);

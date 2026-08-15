@@ -12,6 +12,8 @@ typedef enum {
     CAT_PETTED,
     CAT_STARTLED,
     CAT_SLEEPING,
+    CAT_ABSENT,   // the park is empty; sound or a tap summons him
+    CAT_HIDING,   // scared off screen; swipe to search, purr to make peace
 } cat_state_t;
 
 typedef struct {
@@ -69,6 +71,18 @@ int cat_poop_count(void);
 bool cat_take_eat(void);        // he finished a bowl -> refill hunger
 bool cat_take_play_hit(void);   // one paw-bat or pounce landed
 bool cat_take_poop_clean(void); // a poop was tapped away
+bool cat_take_summon(void);     // a sound or tap called him in from absent
+bool cat_take_reconcile(void);  // an earned purr made peace after a scare
+
+// The mic heard a sharp sound (only summons an absent cat, never a hiding one).
+void cat_hear_sound(void);
+
+// Trust state, persisted through the stats blob: each unreconciled scare
+// raises the level (hides farther, costs more); wary = emerged but not yet
+// forgiven.
+int cat_scare_level(void);
+bool cat_wary(void);
+void cat_restore_trust(int scare_level, bool wary);
 
 cat_state_t cat_state(void);
 

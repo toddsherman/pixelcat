@@ -212,6 +212,11 @@ typedef enum {
     M_PET,        // rubbed: purr + hearts (portrait pose)
     M_EAT,        // at the bowl (clean-paw frames, slurping)
     M_PLAY_PAW,   // batting the yarn ball (pawing frames)
+    M_ABSENT,     // elsewhere: the park is empty
+    M_ENTER,      // trotting in from an edge to centre
+    M_FLEE,       // panicked leaps off the screen after a scare
+    M_HIDDEN,     // hiding in the world; the camera is free to search
+    M_EMERGE,     // found: the camera eases back to him
     M_MODE_COUNT,
 } mode_t;
 
@@ -236,6 +241,11 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
     [M_PET] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 5.5f, true},
     [M_EAT] = {ANIM_CLEAN_PAW, ANIM_CLEAN_PAW_N, 5.0f, true},
     [M_PLAY_PAW] = {ANIM_PAWING, ANIM_PAWING_N, 7.0f, true},
+    [M_ABSENT] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 3.5f, true},
+    [M_ENTER] = {ANIM_TROT, ANIM_TROT_N, 12.0f, true},
+    [M_FLEE] = {ANIM_LEAP, ANIM_LEAP_N, 20.0f, true},
+    [M_HIDDEN] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 2.5f, true},
+    [M_EMERGE] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 3.5f, true},
 };
 
 // Behaviour tuning.
@@ -288,6 +298,7 @@ static struct {
     int prev_frame;
 
     bool was_down;
+    bool press_on_cat;   // the current press began on the cat
     float last_x, last_y, moved, press_t;
     float tap_age;       // time since the last side tap
     int tap_side;        // -1 / +1 / 0 = none pending
@@ -314,6 +325,17 @@ static struct {
     float goal_stop;     // world x he trots toward
     bool eat_evt, play_evt, clean_evt;
     int st_h, st_a, st_e, st_x;  // stats pushed in for HUD + status page
+
+    // Camera and trust (Phase 3). Normally the camera is pinned to the cat;
+    // absence, fleeing and hiding set it free.
+    float cam_x;
+    bool cam_free;
+    bool hiding;         // he is at a hiding spot (or being petted there)
+    bool wary;           // emerged after a scare but not yet forgiven
+    int scare_level;     // unreconciled scares; sets distance and cost
+    int flee_dir;
+    float absent_in;     // seconds until he wanders in on his own
+    bool summon_evt, reconcile_evt;
 
     uint32_t rng;
 } s;
@@ -404,10 +426,10 @@ static float world_delta(float from, float to)
     return d;
 }
 
-// Canvas cell of a world x (object centres), given the cat pinned at CENTRE.
+// Canvas cell of a world x (object centres), relative to the camera.
 static int obj_canvas_x(float wx)
 {
-    return (int)(CENTRE + world_delta(s.world_x, wx) / PIX_SCALE + 0.5f);
+    return (int)(CENTRE + world_delta(s.cam_x, wx) / PIX_SCALE + 0.5f);
 }
 
 static void drop_bowl(void)
@@ -470,6 +492,56 @@ static void goal_arrive(void)
     enter((kind == 1) ? M_EAT : M_PLAY_PAW);
 }
 
+// ---------------------------------------------------------------------------
+// Absence, fleeing and hiding: the camera comes unpinned from the cat.
+// ---------------------------------------------------------------------------
+
+static void begin_absent(void)
+{
+    s.cam_free = true;
+    s.absent_in = 25.0f + 35.0f * frand01();
+    enter(M_ABSENT);
+}
+
+static void begin_enter(void)
+{
+    // He comes in from a random edge, headed for the middle of the view.
+    const int from = (frand01() < 0.5f) ? -1 : 1;
+    s.world_x = wrapf(s.cam_x + (float)from * (CENTRE + SPRITE_W + 3.0f) *
+                                    PIX_SCALE);
+    s.facing_left = from > 0;
+    s.cam_free = true;  // the camera holds still while he walks in
+    enter(M_ENTER);
+}
+
+static void begin_flee(void)
+{
+    s.flee_dir = (frand01() < 0.5f) ? -1 : 1;
+    s.facing_left = s.flee_dir < 0;
+    s.cam_free = true;  // the world stops following him: he runs out of it
+    s.goal_kind = 0;
+    s.tilt_walk = false;
+    s.tilt_leap = false;
+    s.wandering = false;
+    enter(M_FLEE);
+    s.dash = s.flee_dir;
+}
+
+// Farther with every unreconciled scare, up to the loop's maximum.
+static float hide_distance(void)
+{
+    float d = 500.0f + 550.0f * (float)s.scare_level;
+    const float cap = (float)BG_WORLD_W * 0.5f - 150.0f;
+    return (d > cap) ? cap : d;
+}
+
+static void place_hide(void)
+{
+    s.world_x = wrapf(s.cam_x + (float)s.flee_dir * hide_distance());
+    s.hiding = true;
+    enter(M_HIDDEN);
+}
+
 // The same grade curves gen_bg.py bakes into the scene, applied to the
 // sprite palette so cat and world always match.
 static void grade_rgb(int variant, int r, int g, int b, int *ro, int *go, int *bo)
@@ -512,13 +584,14 @@ static bool palette_ungraded(int idx)
 void cat_init(void)
 {
     memset(&s, 0, sizeof(s));
-    s.mode = M_PORTRAIT;
     s.decide_in = 3.0f;
     s.pos_x = CENTRE;
     s.facing_left = true;
     s.batt_pct = -1;
     s.st_h = s.st_a = s.st_e = s.st_x = 100;  // until main pushes real values
     s.rng = 0x9E3779B9;
+    // Every boot is a wake: the park starts empty until something calls him.
+    begin_absent();
 
     for (int v = 0; v < BG_VARIANTS; v++) {
         for (int i = 0; i < C_COUNT; i++) {
@@ -559,9 +632,17 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 speed = d / dt;
             }
             s.press_t += dt;
+            // The search camera: ONLY while he hides, and only for strokes
+            // that began off the cat — a press that started on him is a pet,
+            // and a pan that crosses his body stays a pan (a purr is earned,
+            // never brushed in passing).
+            if (s.mode == M_HIDDEN && !s.press_on_cat) {
+                s.cam_x = wrapf(s.cam_x - dx * PIX_SCALE * 1.5f);
+            }
         } else {
             s.moved = 0.0f;
             s.press_t = 0.0f;
+            s.press_on_cat = touch_near_cat(tx, ty);
         }
         s.last_x = tx;
         s.last_y = ty;
@@ -638,6 +719,21 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         }
     }
 
+    // While the park is empty, any tap calls him in; while he hides, a tap
+    // on him (once found) brings him out — wary.
+    if (released_tap && !tap_claimed) {
+        if (s.mode == M_ABSENT) {
+            s.summon_evt = true;
+            begin_enter();
+            tap_claimed = true;
+        } else if (s.mode == M_HIDDEN &&
+                   touch_near_cat(s.last_x, s.last_y)) {
+            s.hiding = false;
+            enter(M_EMERGE);
+            tap_claimed = true;
+        }
+    }
+
     // Meals and play sessions hold his attention: no dozing off, and tilt or
     // side taps cannot yank him away from the bowl or the ball.
     const bool busy = s.goal_kind != 0 || s.mode == M_EAT ||
@@ -654,8 +750,9 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     if (tilt_mag > TILT_WALK_ON && s.mode != M_SLEEP) {
         s.since_touch = 0.0f;
     }
+    // Tilt moves *him*, and off-screen he is not there to move.
     const bool tilt_ok = interruptible && s.mode != M_ANGRY && s.mode != M_PET &&
-                         s.mode != M_SLEEP && !busy;
+                         s.mode != M_SLEEP && !busy && !s.cam_free;
     if (tilt_ok && tilt_mag > TILT_LEAP_ON && s.mode != M_LEAP) {
         // Steep tilt: bound that way in chained leaps.
         s.move_dir = tilt_dir;
@@ -675,23 +772,34 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     }
 
     // --- global triggers, in priority order ---
-    if (shake > SHAKE_HISS_THRESHOLD && s.mode != M_ANGRY) {
+    if (shake > SHAKE_HISS_THRESHOLD && s.mode == M_HIDDEN) {
+        // Scaring a cat that is already hiding re-hides him farther, now.
+        s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
+        s.hiss = true;
+        s.flee_dir = (frand01() < 0.5f) ? -1 : 1;
+        place_hide();
+    } else if (shake > SHAKE_HISS_THRESHOLD && s.mode != M_ANGRY &&
+               !s.cam_free) {
+        s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
+        s.wary = true;
         enter(M_ANGRY);
         s.hiss = true;
     } else if (interruptible && s.mode != M_ANGRY) {
-        if (stroking && s.mode != M_PET && s.mode != M_EAT) {
+        if (stroking && s.mode != M_PET && s.mode != M_EAT &&
+            (!s.cam_free || (s.mode == M_HIDDEN && s.press_on_cat))) {
             if (s.mode == M_SLEEP) {
                 s.chirp = true;
             }
             enter(M_PET);
-        } else if (tap_on_cat && !tap_claimed && !busy) {
+        } else if (tap_on_cat && !tap_claimed && !busy && !s.cam_free) {
             // A tap earns a glance and a tail flick; jumping is a play move.
             if (s.mode == M_SLEEP) {
                 s.chirp = true;
             }
             enter(M_PORTRAIT);
             s.decide_in = 1.5f;
-        } else if (tap_on_side && !tap_claimed && !busy && s.mode != M_PET) {
+        } else if (tap_on_side && !tap_claimed && !busy && !s.cam_free &&
+                   s.mode != M_PET) {
             if (s.tap_side == side_of) {
                 // Second tap on the same side: leap that way.
                 s.move_dir = side_of;
@@ -716,9 +824,58 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             if (shake > SHAKE_HISS_THRESHOLD) {
                 s.t = fminf(s.t, 0.75f);  // keep looping while shaken
             } else if (s.t > 1.8f) {
-                to_passive();
+                // The hiss is done: he bolts. Never a walk.
+                begin_flee();
             }
             break;
+
+        case M_ABSENT:
+            s.pos_x = -1000.0f;  // nothing to pet out there
+            s.absent_in -= dt;
+            if (s.absent_in <= 0.0f) {
+                begin_enter();  // he wanders back on his own, no grudge
+            }
+            break;
+
+        case M_ENTER: {
+            const float d = world_delta(s.world_x, s.cam_x);
+            const float step = TROT_SPEED * PIX_SCALE * 1.2f * dt;
+            if (fabsf(d) <= step) {
+                s.world_x = s.cam_x;
+                s.cam_free = false;
+                to_passive();
+            } else {
+                s.world_x = wrapf(s.world_x + ((d < 0.0f) ? -step : step));
+            }
+            break;
+        }
+
+        case M_FLEE: {
+            const float step = 3.0f * LEAP_SPEED * PIX_SCALE * dt;
+            s.world_x = wrapf(s.world_x + (float)s.flee_dir * step);
+            if (fabsf(world_delta(s.cam_x, s.world_x)) >
+                (CENTRE + SPRITE_W + 4.0f) * PIX_SCALE) {
+                place_hide();
+            }
+            break;
+        }
+
+        case M_HIDDEN:
+            break;  // he sits tight; the searching is yours to do
+
+        case M_EMERGE: {
+            // The camera eases back to following him.
+            const float d = world_delta(s.cam_x, s.world_x);
+            const float k = 1.0f - expf(-dt * 3.0f);
+            if (fabsf(d) < 3.0f) {
+                s.cam_x = s.world_x;
+                s.cam_free = false;
+                to_passive();
+            } else {
+                s.cam_x = wrapf(s.cam_x + d * k);
+            }
+            break;
+        }
 
         case M_TROT:
             if (s.goal_kind) {
@@ -804,8 +961,21 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             break;
 
         case M_PET:
+            if (s.hiding && s.purr > 0.55f && s.t > 1.2f) {
+                // An earned purr at the hiding spot: peace is made.
+                s.hiding = false;
+                s.wary = false;
+                s.scare_level = 0;
+                s.reconcile_evt = true;
+                enter(M_EMERGE);
+                break;
+            }
             if (!touch->down && s.stroke_speed < 4.0f && s.t > 0.6f) {
-                to_passive();
+                if (s.hiding) {
+                    enter(M_HIDDEN);  // not convinced yet; back to his spot
+                } else {
+                    to_passive();
+                }
             }
             break;
 
@@ -927,6 +1097,14 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         s.purr += (target > s.purr) ? step : -step;
     }
 
+    // A purring cat is a cat at peace: an earned purr after he emerged wary
+    // also resets the escalation. A purr cannot be faked.
+    if (s.wary && !s.hiding && s.mode == M_PET && s.purr > 0.55f) {
+        s.wary = false;
+        s.scare_level = 0;
+        s.reconcile_evt = true;
+    }
+
     // --- hearts ---
     if (s.mode == M_PET && touch->down) {
         s.heart_spawn -= dt;
@@ -958,8 +1136,12 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     // Frame-edge sound events, emitted exactly once per frame change.
     const int frame = anim_frame();
     if (frame != s.prev_frame) {
-        if (s.mode == M_TROT && (frame == 1 || frame == 5)) {
+        if ((s.mode == M_TROT || s.mode == M_ENTER) &&
+            (frame == 1 || frame == 5)) {
             s.step = true;
+        }
+        if (s.mode == M_FLEE && frame == 0) {
+            s.dash = s.flee_dir;  // a whoosh per panicked leap
         }
         if ((s.mode == M_CLEAN_PAW || s.mode == M_CLEAN_EAR ||
              s.mode == M_EAT) && frame == 1) {
@@ -984,6 +1166,15 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 
     s.world_x = fmodf(fmodf(s.world_x, (float)BG_WORLD_W) + (float)BG_WORLD_W,
                       (float)BG_WORLD_W);
+
+    // Camera: pinned to him in normal life; free while he is gone, fleeing,
+    // hidden or being walked back to.
+    if (!s.cam_free) {
+        s.cam_x = s.world_x;
+        s.pos_x = CENTRE;
+    } else if (s.mode != M_ABSENT) {
+        s.pos_x = CENTRE + world_delta(s.cam_x, s.world_x) / PIX_SCALE;
+    }
 
     s.was_down = touch->down;
 }
@@ -1116,11 +1307,55 @@ bool cat_take_hiss(void)
 cat_state_t cat_state(void)
 {
     switch (s.mode) {
-        case M_PET: return CAT_PETTED;
+        case M_PET: return s.hiding ? CAT_HIDING : CAT_PETTED;
         case M_ANGRY: return CAT_STARTLED;
         case M_SLEEP: return CAT_SLEEPING;
+        case M_ABSENT:
+        case M_ENTER: return CAT_ABSENT;
+        case M_FLEE:
+        case M_HIDDEN:
+        case M_EMERGE: return CAT_HIDING;
         default: return CAT_IDLE;
     }
+}
+
+bool cat_take_summon(void)
+{
+    const bool v = s.summon_evt;
+    s.summon_evt = false;
+    return v;
+}
+
+bool cat_take_reconcile(void)
+{
+    const bool v = s.reconcile_evt;
+    s.reconcile_evt = false;
+    return v;
+}
+
+void cat_hear_sound(void)
+{
+    // Sound summons an absent cat; it never summons a scared one.
+    if (s.mode == M_ABSENT) {
+        s.summon_evt = true;
+        begin_enter();
+    }
+}
+
+int cat_scare_level(void)
+{
+    return s.scare_level;
+}
+
+bool cat_wary(void)
+{
+    return s.wary;
+}
+
+void cat_restore_trust(int scare_level, bool wary)
+{
+    s.scare_level = (scare_level < 0) ? 0 : (scare_level > 4) ? 4 : scare_level;
+    s.wary = wary;
 }
 
 void cat_debug_force(int mode)
@@ -1135,7 +1370,21 @@ void cat_debug_force(int mode)
         s.poop_live[0] = true;
     } else if (mode == 53) {
         s.status_screen = true;
+    } else if (mode == 60) {
+        begin_absent();
+    } else if (mode == 61) {
+        // Hidden with the camera parked right on his spot (found).
+        s.cam_free = true;
+        s.hiding = true;
+        s.wary = true;
+        s.world_x = s.cam_x;
+        enter(M_HIDDEN);
     } else if (mode >= 0 && mode < M_MODE_COUNT) {
+        // Preview/test forcing implies a present, centred cat.
+        s.cam_free = false;
+        s.cam_x = s.world_x;
+        s.pos_x = CENTRE;
+        s.hiding = false;
         enter((mode_t)mode);
         s.wandering = false;
         s.since_touch = 0.0f;
@@ -1217,7 +1466,9 @@ static void compose(void)
 
     const int x0 = (int)(s.pos_x + 0.5f);
     const int y0 = FLOOR_Y - f->nrows - f->lift;
-    stampf(x0, y0, f->rows, f->nrows, s.facing_left);
+    if (s.mode != M_ABSENT) {
+        stampf(x0, y0, f->rows, f->nrows, s.facing_left);
+    }
 
     if (s.mode == M_SLEEP) {
         const int wob = (int)(1.5f * sinf(s.t * 1.3f));
@@ -1437,8 +1688,9 @@ void cat_render(void)
     }
 
     const uint16_t (*world)[BG_STRIP_H] = cat_bg[s.daypart];
-    // The cat is pinned to screen centre; his world position sets the scroll.
-    const int scroll = (int)s.world_x - (int)(CENTRE * PIX_SCALE);
+    // The camera sets the scroll: pinned to him normally, free while he is
+    // absent or hiding (the swipe search pans it).
+    const int scroll = (int)s.cam_x - (int)(CENTRE * PIX_SCALE);
 
     for (int band = 0; band < BAND_COUNT; band++) {
         uint16_t *buf = display_acquire_band();

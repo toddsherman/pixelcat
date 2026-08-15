@@ -76,12 +76,47 @@ static void drain_events(void)
 // Canvas cell -> logical px, centre of the cell.
 #define CELL(c) ((c) * PIX_SCALE + PIX_SCALE / 2)
 
+// Boot leaves the park empty; most tests want him present and centred.
+static void fresh_present_cat(void)
+{
+    cat_init();
+    cat_debug_force(0);
+    drain_events();
+}
+
+// Stroke briskly back and forth across the cat until the purr passes the
+// target (the reconciliation threshold is 0.55).
+static int pet_until_purr(float target, float seconds)
+{
+    cat_touch_t t = {.down = true};
+    float ph = 0.0f;
+    for (int i = 0; i < (int)(seconds / DT); i++) {
+        ph += DT * 10.0f;
+        t.x = (int16_t)(CELL(28) + 60.0f * __builtin_sinf(ph));
+        t.y = CELL(38);
+        cat_update(DT, &t, 0.0f, 0.0f);
+        if (cat_purr_level() > target) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// One hard shake spike, then calm.
+static void scare(void)
+{
+    cat_touch_t t = {0};
+    cat_update(DT, &t, 8.0f, 0.0f);
+    for (int i = 0; i < (int)(3.5f / DT); i++) {
+        cat_update(DT, &t, 0.0f, 0.0f);
+    }
+}
+
 int main(void)
 {
     // --- Feed: fish icon tap spawns the bowl; he walks over and eats ---
-    cat_init();
+    fresh_present_cat();
     cat_set_stats(35, 62, 80, 20);
-    drain_events();
     tap(CELL(13), CELL(4));  // fish icon zone
     int ate = 0, slurps = 0;
     for (int i = 0; i < (int)(14.0f / DT); i++) {
@@ -93,9 +128,8 @@ int main(void)
     expect(slurps >= 3, "eating slurps");
 
     // --- Play: ball icon tap starts a session with bats or pounces ---
-    cat_init();
+    fresh_present_cat();
     cat_set_stats(80, 62, 80, 20);
-    drain_events();
     tap(CELL(4), CELL(4));  // yarn ball icon zone
     int hits = 0;
     for (int i = 0; i < (int)(20.0f / DT); i++) {
@@ -106,8 +140,7 @@ int main(void)
     expect(cat_state() == CAT_IDLE, "session over, back to idle");
 
     // --- Poop: tap cleans it ---
-    cat_init();
-    drain_events();
+    fresh_present_cat();
     cat_debug_force(52);  // poop 5 cells left of him
     expect(cat_poop_count() == 1, "debug poop spawned");
     tap(CELL(14), CELL(40));
@@ -115,16 +148,14 @@ int main(void)
     expect(cat_poop_count() == 0, "count back to zero");
 
     // --- Status page: hearts tap opens, next tap closes ---
-    cat_init();
-    drain_events();
+    fresh_present_cat();
     tap(CELL(25), CELL(4));  // hearts zone
     // The status screen swallows behaviour: a side tap must not leap.
     tap(CELL(50), CELL(25));
     expect(cat_take_dash() == 0, "status page swallows side taps");
 
     // --- Retired: a tap on the cat is a glance, never a jump ---
-    cat_init();
-    drain_events();
+    fresh_present_cat();
     tap(CELL(28), CELL(38));
     int boing_after_tap = cat_take_boing() ? 1 : 0;
     idle_frames(10);
@@ -132,8 +163,7 @@ int main(void)
     expect(boing_after_tap == 0, "tap on the cat no longer jumps");
 
     // --- Still alive: double tap on a side still leaps ---
-    cat_init();
-    drain_events();
+    fresh_present_cat();
     tap(CELL(50), CELL(25));
     tap(CELL(50), CELL(25));
     int dashed = 0;
@@ -144,8 +174,7 @@ int main(void)
     expect(dashed >= 1, "double side tap still leaps");
 
     // --- Busy: tilt cannot pull him off a fresh bowl ---
-    cat_init();
-    drain_events();
+    fresh_present_cat();
     cat_debug_force(50);  // bowl drop
     for (int i = 0; i < (int)(3.0f / DT); i++) {
         cat_touch_t t = {0};
@@ -154,6 +183,92 @@ int main(void)
     const float walked = cat_take_walked();
     expect(walked < 30.0f * PIX_SCALE,
            "tilt ignored while dinner is on (goal walk only)");
+
+    // ---------------- Phase 3 ----------------
+
+    // --- Boot: the park is empty; a sound summons him in ---
+    cat_init();
+    drain_events();
+    expect(cat_state() == CAT_ABSENT, "boot starts absent");
+    cat_hear_sound();
+    expect(cat_take_summon(), "sound summons: event fires");
+    int steps = 0;
+    for (int i = 0; i < (int)(8.0f / DT) && cat_state() == CAT_ABSENT; i++) {
+        idle_frames(1);
+        steps += cat_take_step() ? 1 : 0;
+    }
+    for (int i = 0; i < (int)(8.0f / DT) && cat_state() != CAT_IDLE; i++) {
+        idle_frames(1);
+        steps += cat_take_step() ? 1 : 0;
+    }
+    expect(cat_state() == CAT_IDLE, "he trots in and settles");
+    expect(steps >= 4, "entrance has footsteps");
+
+    // --- Left alone, he wanders in on his own; no grudge ---
+    cat_init();
+    drain_events();
+    for (int i = 0; i < (int)(70.0f / DT) && cat_state() != CAT_IDLE; i++) {
+        idle_frames(1);
+    }
+    expect(cat_state() == CAT_IDLE, "he comes back on his own within ~a minute");
+
+    // --- Scare: hiss, panicked flee, hidden; tilt inert; sound ignored ---
+    fresh_present_cat();
+    scare();
+    expect(cat_take_hiss(), "shake hisses");
+    expect(cat_state() == CAT_HIDING, "after the hiss he flees and hides");
+    expect(cat_scare_level() == 1, "one scare on the books");
+    cat_take_walked();
+    for (int i = 0; i < (int)(2.0f / DT); i++) {
+        cat_touch_t t = {0};
+        cat_update(DT, &t, 0.0f, 6.0f);  // hard tilt
+    }
+    expect(cat_take_walked() == 0.0f, "tilt is inert while he hides");
+    cat_hear_sound();
+    expect(cat_state() == CAT_HIDING, "sound does not summon a scared cat");
+
+    // --- Re-scare while hidden escalates ---
+    {
+        cat_touch_t t = {0};
+        cat_update(DT, &t, 8.0f, 0.0f);
+        idle_frames(5);
+    }
+    expect(cat_scare_level() == 2, "scaring a hiding cat escalates");
+
+    // --- Search: swipe pans the camera; a tap on him brings him out wary ---
+    fresh_present_cat();
+    scare();
+    drain_events();
+    // Pan with long drags until he is on screen (near the centre), then tap.
+    int found = 0;
+    for (int swipes = 0; swipes < 60 && !found; swipes++) {
+        // Drag high across the sky, well clear of the cat's petting box.
+        cat_touch_t t = {.down = true, .x = CELL(46), .y = CELL(10)};
+        cat_update(DT, &t, 0.0f, 0.0f);
+        for (int i = 0; i < 10; i++) {
+            t.x -= (int16_t)(4 * PIX_SCALE);
+            cat_update(DT, &t, 0.0f, 0.0f);
+        }
+        t.down = false;
+        cat_update(DT, &t, 0.0f, 0.0f);
+        // Probe: does a tap at centre reach him now?
+        tap(CELL(28), CELL(38));
+        for (int i = 0; i < 5; i++) {
+            idle_frames(1);
+        }
+        if (cat_state() == CAT_IDLE) {
+            found = 1;
+        }
+    }
+    expect(found, "swipe search finds him; a tap brings him back");
+    expect(cat_wary(), "he came out wary, not forgiven");
+    expect(cat_scare_level() == 1, "a plain tap does not reset the score");
+
+    // --- Reconciliation: pet to a real purr; the slate wipes clean ---
+    expect(pet_until_purr(0.55f, 10.0f), "petting earns a purr");
+    idle_frames(5);
+    expect(cat_take_reconcile(), "the purr makes peace");
+    expect(!cat_wary() && cat_scare_level() == 0, "fear resets to baseline");
 
     printf(s_failures ? "\n%d FAILURES\n" : "\nall tests pass\n", s_failures);
     return s_failures ? 1 : 0;

@@ -27,9 +27,15 @@ void stats_tick(float dt, bool asleep, float purr);
 // Event feeds from the cat engine.
 void stats_on_walk(float logical_px);
 void stats_on_jump(void);         // any leap or big jump launch
-void stats_on_scare(void);        // the shake hiss
+void stats_on_scare(int level);   // the shake hiss; higher levels cost more
+void stats_on_reconcile(void);    // peace made after a scare
 void stats_on_eat(float amount);  // finishing a bowl
 void stats_on_play_hit(void);     // one paw-bat or pounce in a play session
+
+// Trust state riding along in the blob (owned by the cat engine).
+void stats_set_trust(int scare_level, bool wary);
+int stats_trust_level(void);
+bool stats_trust_wary(void);
 
 // Poop: eating schedules one a few hours out; the engine spawns it when
 // ready. Visible poops cost affection hourly until cleaned.

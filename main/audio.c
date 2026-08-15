@@ -18,6 +18,12 @@ static const char *TAG = "audio";
 
 static esp_codec_dev_handle_t s_speaker;
 static i2s_chan_handle_t s_tx;
+static i2s_chan_handle_t s_rx;
+
+// Mic detection results, read by the cat loop.
+static volatile bool s_sound_heard;
+static volatile float s_mic_rms;
+static volatile float s_mic_ambient;
 
 // Written by the cat loop, read by the synth task. A torn read of a float is
 // impossible on Xtensa (aligned 32-bit stores are atomic), so no lock.
@@ -35,7 +41,8 @@ static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
 {
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
-    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_tx, NULL), TAG, "i2s channel");
+    // Full duplex: the mic (codec ASDOUT -> DIN) shares the clock pair.
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_tx, &s_rx), TAG, "i2s channel");
 
     const i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_SAMPLE_RATE),
@@ -45,15 +52,16 @@ static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
             .bclk = PIN_I2S_BCLK,
             .ws = PIN_I2S_WS,
             .dout = PIN_I2S_DOUT,
-            .din = I2S_GPIO_UNUSED,
+            .din = PIN_I2S_DIN,
         },
     };
-    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_tx, &std_cfg), TAG, "i2s std");
+    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_tx, &std_cfg), TAG, "i2s std tx");
+    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_rx, &std_cfg), TAG, "i2s std rx");
 
     audio_codec_i2s_cfg_t i2s_cfg = {
         .port = I2S_NUM_0,
         .tx_handle = s_tx,
-        .rx_handle = NULL,
+        .rx_handle = s_rx,
     };
     *data_if = audio_codec_new_i2s_data(&i2s_cfg);
     ESP_RETURN_ON_FALSE(*data_if, ESP_FAIL, TAG, "i2s data interface");
@@ -76,7 +84,7 @@ static esp_err_t codec_init(i2c_master_bus_handle_t bus, const audio_codec_data_
     es8311_codec_cfg_t es_cfg = {
         .ctrl_if = ctrl_if,
         .gpio_if = gpio_if,
-        .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC,
+        .codec_mode = ESP_CODEC_DEV_WORK_MODE_BOTH,
         .pa_pin = PIN_POWER_AMP,
         .pa_reverted = false,
         .master_mode = false,
@@ -87,7 +95,7 @@ static esp_err_t codec_init(i2c_master_bus_handle_t bus, const audio_codec_data_
     ESP_RETURN_ON_FALSE(codec_if, ESP_FAIL, TAG, "es8311");
 
     esp_codec_dev_cfg_t dev_cfg = {
-        .dev_type = ESP_CODEC_DEV_TYPE_OUT,
+        .dev_type = ESP_CODEC_DEV_TYPE_IN_OUT,
         .codec_if = codec_if,
         .data_if = data_if,
     };
@@ -105,6 +113,9 @@ static esp_err_t codec_init(i2c_master_bus_handle_t bus, const audio_codec_data_
                         ESP_FAIL, TAG, "codec open");
     ESP_RETURN_ON_FALSE(esp_codec_dev_set_out_vol(s_speaker, PURR_VOLUME) == ESP_CODEC_DEV_OK,
                         ESP_FAIL, TAG, "codec volume");
+    if (esp_codec_dev_set_in_gain(s_speaker, MIC_GAIN_DB) != ESP_CODEC_DEV_OK) {
+        ESP_LOGW(TAG, "mic gain not set; detection may be deaf");
+    }
     return ESP_OK;
 }
 
@@ -353,11 +364,54 @@ static void fill_frame(purr_state_t *st, int16_t *out)
     }
 }
 
+static bool synth_audible(const purr_state_t *st)
+{
+    return st->level > 0.01f || st->chirp_t >= 0.0f || st->hiss_t >= 0.0f ||
+           st->boing_t >= 0.0f || st->slurp_t >= 0.0f || st->swipe_t >= 0.0f ||
+           st->dash_t >= 0.0f || st->step_env > 0.01f;
+}
+
+// ---------------------------------------------------------------------------
+// The ear: each mic frame's RMS is compared against a slow ambient floor.
+// Any sharp sound clears it — a psst, a snap, a knock. Detection is gated
+// while (and shortly after) his own speaker sounds, so he cannot summon
+// himself.
+// ---------------------------------------------------------------------------
+
+static void listen_frame(const int16_t *in, bool gated)
+{
+    float sum = 0.0f;
+    for (int i = 0; i < AUDIO_FRAME_SAMPLES; i++) {
+        const float v = (float)in[i] * (1.0f / 32768.0f);
+        sum += v * v;
+    }
+    const float rms = sqrtf(sum / AUDIO_FRAME_SAMPLES);
+    s_mic_rms = rms;
+
+    static float ambient = 0.004f;
+    const float frame_s = (float)AUDIO_FRAME_SAMPLES / AUDIO_SAMPLE_RATE;
+
+    if (!gated) {
+        const float floor_ = (ambient > 0.002f) ? ambient : 0.002f;
+        if (rms > floor_ * MIC_TRIGGER_RATIO && rms > floor_ + MIC_TRIGGER_MIN) {
+            s_sound_heard = true;
+        }
+    }
+    // The floor tracks quiet frames quickly and loud ones very slowly, so a
+    // burst of talking does not teach him to ignore you.
+    const float tau = (rms < ambient) ? MIC_AMBIENT_TAU_S : MIC_AMBIENT_TAU_S * 6.0f;
+    ambient += (rms - ambient) * (frame_s / tau);
+    s_mic_ambient = ambient;
+}
+
 static void purr_task(void *arg)
 {
     (void)arg;
     static int16_t frame[AUDIO_FRAME_SAMPLES];
+    static int16_t mic[AUDIO_FRAME_SAMPLES];
     purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f};
+    float gate_hold = 0.0f;
+    const float frame_s = (float)AUDIO_FRAME_SAMPLES / AUDIO_SAMPLE_RATE;
 
     for (;;) {
         if (s_stop) {
@@ -368,6 +422,15 @@ static void purr_task(void *arg)
         if (ret != ESP_CODEC_DEV_OK) {
             ESP_LOGW(TAG, "speaker write failed: %d", ret);
             vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
+        }
+
+        // Same rate, same frame size: one mic frame per speaker frame keeps
+        // the duplex loop self-pacing.
+        if (esp_codec_dev_read(s_speaker, mic, sizeof(mic)) == ESP_CODEC_DEV_OK) {
+            gate_hold = synth_audible(&st) ? MIC_GATE_HOLD_S
+                                           : fmaxf(0.0f, gate_hold - frame_s);
+            listen_frame(mic, gate_hold > 0.0f);
         }
     }
 }
@@ -423,6 +486,19 @@ void audio_swipe(void)
 void audio_dash(int dir)
 {
     s_dash_pending = (dir < 0) ? -1 : 1;
+}
+
+bool audio_take_sound(void)
+{
+    const bool v = s_sound_heard;
+    s_sound_heard = false;
+    return v;
+}
+
+void audio_mic_levels(float *rms, float *ambient)
+{
+    *rms = s_mic_rms;
+    *ambient = s_mic_ambient;
 }
 
 void audio_stop(void)

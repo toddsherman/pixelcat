@@ -16,7 +16,12 @@
 
 // Ignored for two days = affection gone; half rate while he sleeps.
 #define AFFECT_DECAY_PER_S (100.0f / (48.0f * 3600.0f))
+// Scares cost more each time until peace is made; a reconciliation recovers
+// a little of what fear took.
 #define AFFECT_SCARE_COST 8.0f
+#define AFFECT_SCARE_STEP 3.0f
+#define AFFECT_SCARE_MAX 20.0f
+#define AFFECT_RECONCILE 4.0f
 // Petting: gain scales with purr strength and a per-session budget, so spam
 // cannot max a cat. The budget refills over ~40 min of leaving him be.
 #define PET_GAIN_PER_S 0.9f
@@ -58,6 +63,24 @@ static float s_pet_budget;
 static int32_t s_day_serial;  // 0 = unknown
 static float s_poop_due_s;    // >0 counting down, 0 none, -1 ready to spawn
 static int s_poop_count;
+static int s_trust_level;
+static bool s_trust_wary;
+
+void stats_set_trust(int scare_level, bool wary)
+{
+    s_trust_level = scare_level;
+    s_trust_wary = wary;
+}
+
+int stats_trust_level(void)
+{
+    return s_trust_level;
+}
+
+bool stats_trust_wary(void)
+{
+    return s_trust_wary;
+}
 static uint32_t s_rng = 0x2545F491u;
 
 static float srand01(void)
@@ -153,9 +176,21 @@ void stats_on_jump(void)
     s_stats.energy = clamp01_100(s_stats.energy - ENERGY_PER_JUMP);
 }
 
-void stats_on_scare(void)
+void stats_on_scare(int level)
 {
-    s_stats.affection = clamp01_100(s_stats.affection - AFFECT_SCARE_COST);
+    float cost = AFFECT_SCARE_COST + AFFECT_SCARE_STEP * (float)(level - 1);
+    if (cost < AFFECT_SCARE_COST) {
+        cost = AFFECT_SCARE_COST;
+    }
+    if (cost > AFFECT_SCARE_MAX) {
+        cost = AFFECT_SCARE_MAX;
+    }
+    s_stats.affection = clamp01_100(s_stats.affection - cost);
+}
+
+void stats_on_reconcile(void)
+{
+    s_stats.affection = clamp01_100(s_stats.affection + AFFECT_RECONCILE);
 }
 
 void stats_on_eat(float amount)
@@ -257,7 +292,8 @@ void stats_offline(double seconds)
 #include "nvs.h"
 
 #define STATS_MAGIC_V1 0x50435331u  // 'PCS1'
-#define STATS_MAGIC 0x50435332u     // 'PCS2': adds the poop fields
+#define STATS_MAGIC_V2 0x50435332u  // 'PCS2': adds the poop fields
+#define STATS_MAGIC 0x50435333u     // 'PCS3': adds trust (scares, wariness)
 
 typedef struct {
     uint32_t magic;
@@ -275,6 +311,18 @@ typedef struct {
     int32_t day_serial;
     float poop_due_s;
     int32_t poop_count;
+} stats_blob_v2_t;
+
+typedef struct {
+    uint32_t magic;
+    float hunger, affection, energy, exercise;
+    float pet_budget;
+    int64_t saved_epoch;
+    int32_t day_serial;
+    float poop_due_s;
+    int32_t poop_count;
+    int32_t trust_level;
+    int32_t trust_wary;
 } stats_blob_t;
 
 static const char *TAG = "stats";
@@ -312,12 +360,19 @@ bool stats_store_load(void)
     size_t len = sizeof(b);
     const esp_err_t ret = nvs_get_blob(h, "stats", &b, &len);
     nvs_close(h);
-    if (ret == ESP_OK && len == sizeof(stats_blob_v1_t) &&
-        b.magic == STATS_MAGIC_V1) {
-        b.magic = STATS_MAGIC;  // v1 cat, new fields at their defaults
+    if (ret != ESP_OK) {
+        return false;
+    }
+    // Older cats migrate: each missing tail gets its defaults.
+    if (len == sizeof(stats_blob_v1_t) && b.magic == STATS_MAGIC_V1) {
         b.poop_due_s = 0.0f;
         b.poop_count = 0;
-    } else if (ret != ESP_OK || len != sizeof(b) || b.magic != STATS_MAGIC) {
+        b.trust_level = 0;
+        b.trust_wary = 0;
+    } else if (len == sizeof(stats_blob_v2_t) && b.magic == STATS_MAGIC_V2) {
+        b.trust_level = 0;
+        b.trust_wary = 0;
+    } else if (len != sizeof(b) || b.magic != STATS_MAGIC) {
         return false;
     }
 
@@ -331,6 +386,10 @@ bool stats_store_load(void)
     s_poop_due_s = b.poop_due_s;
     s_poop_count = (b.poop_count < 0) ? 0 : (b.poop_count > 3) ? 3
                                                                : b.poop_count;
+    s_trust_level = (b.trust_level < 0) ? 0 : (b.trust_level > 4)
+                                                  ? 4
+                                                  : b.trust_level;
+    s_trust_wary = b.trust_wary != 0;
     ESP_LOGI(TAG, "loaded H %.0f A %.0f E %.0f X %.0f (saved epoch %lld)",
              (double)s_stats.hunger, (double)s_stats.affection,
              (double)s_stats.energy, (double)s_stats.exercise,
@@ -356,6 +415,8 @@ void stats_store_save(void)
         .day_serial = s_day_serial,
         .poop_due_s = s_poop_due_s,
         .poop_count = s_poop_count,
+        .trust_level = s_trust_level,
+        .trust_wary = s_trust_wary ? 1 : 0,
     };
     nvs_handle_t h;
     if (nvs_open("pixelcat", NVS_READWRITE, &h) != ESP_OK) {
