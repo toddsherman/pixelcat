@@ -84,8 +84,10 @@ Two distinct off-screen states:
   the escalation to baseline, recovers a little affection, and the camera
   eases back to following him. A purr cannot be faked; it has to be earned.
 
-While he is off-screen, petting/tap-on-cat/leap zones are inert; the swipe
-camera exists only in the hiding state.
+While he is off-screen, petting, tap-on-cat, leap zones, and **tilt** are
+all inert — tilt moves *him*, and he isn't there. The swipe camera exists
+only in the hiding state. Everything reactivates when he returns to
+centred behaviour.
 
 ## Learning: he figures out your schedule
 
