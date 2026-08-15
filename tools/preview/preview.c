@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 
     cat_init();
     // Stat values that light the fish (hungry) and show partial hearts.
-    cat_set_stats(35, 62, 80, 20);
+    cat_set_stats(35, 62, 20);
     cat_set_battery(72, false);
     if (want < 10) {
         cat_debug_force(0);  // boot is absent; these states want him present

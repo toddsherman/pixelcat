@@ -10,11 +10,14 @@ will eventually start meowing for you at the hours you taught him.
 
 ## The game
 
-Four stats (hunger, affection, energy, exercise) simulate continuously —
-including through the hours the device sleeps — and read directly on him:
-a hungry cat lingers where food appears, a tired cat does everything a beat
-slower, an aloof cat wanders off and can't be bothered to glance at your tap,
-a devoted one rumbles harder and rains hearts.
+Three stats (food, affection, exercise — every bar aspires to be full)
+simulate continuously, including through the hours the device sleeps, and
+read directly on him: a hungry cat lingers where food appears, an aloof cat
+wanders off and can't be bothered to glance at your tap, a devoted one
+rumbles harder and rains hearts. There is no energy stat — a filling
+exercise bar IS his tiredness: pleasantly worn out, slower, loafing longer,
+napping earlier, and fresh again when it resets with the new day. He washes
+up after every meal, as one does.
 
 **HUD** (tappable icons in the sky): yarn ball starts a 60 s play session
 (bat-and-chase, pounces — the only place his jump lives), fish drops a bowl

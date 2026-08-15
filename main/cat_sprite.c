@@ -327,7 +327,7 @@ static struct {
     int goal_kind;       // 0 none, 1 bowl, 2 ball
     float goal_stop;     // world x he trots toward
     bool eat_evt, play_evt, clean_evt;
-    int st_h, st_a, st_e, st_x;  // stats pushed in for HUD + status page
+    int st_f, st_a, st_x;  // stats pushed in for HUD + status page
 
     // Camera and trust (Phase 3). Normally the camera is pinned to the cat;
     // absence, fleeing and hiding set it free.
@@ -362,10 +362,11 @@ static float f01(int v)
     return (v < 0) ? 1.0f : (v > 100) ? 1.0f : (float)v / 100.0f;
 }
 
-// Tired cats do everything a beat slower; rested ones are snappy.
+// A cat who has done his day's exercise is pleasantly worn out: everything
+// runs a beat slower as the bar fills, and a fresh morning cat is snappy.
 static float anim_pace(void)
 {
-    return 0.8f + 0.3f * f01(s.st_e);
+    return 1.1f - 0.3f * f01(s.st_x);
 }
 
 // Affection shows in the purr: a devoted cat rumbles harder. The floor
@@ -420,9 +421,9 @@ static mode_t random_passive(void)
 static void to_passive(void)
 {
     enter(random_passive());
-    // Tired or under-exercised cats loaf longer between decisions.
-    const float loaf = (1.6f - 0.6f * f01(s.st_e)) *
-                       (1.3f - 0.3f * f01(s.st_x));
+    // A well-exercised cat loafs longer between decisions; a fresh one is
+    // quick to move on to the next thing.
+    const float loaf = 1.0f + 0.8f * f01(s.st_x);
     s.decide_in = (3.0f + 4.0f * frand01()) * loaf;
 }
 
@@ -629,7 +630,7 @@ void cat_init(void)
     s.pos_x = CENTRE;
     s.facing_left = true;
     s.batt_pct = -1;
-    s.st_h = s.st_a = s.st_e = s.st_x = 100;  // until main pushes real values
+    s.st_f = s.st_a = s.st_x = 100;  // until main pushes real values
     s.rng = 0x9E3779B9;
     s.entice = -1;
     // Every boot is a wake: the park starts empty until something calls him.
@@ -1034,11 +1035,13 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 break;
             }
             if (s.t > 6.5f) {
-                // Bowl finished: the hunger refill fires through main.
+                // Bowl finished: the refill fires through main, and like any
+                // self-respecting cat he washes up after dinner.
                 s.bowl_alive = false;
                 s.bowl_fresh = false;
                 s.eat_evt = true;
-                to_passive();
+                enter((frand01() < 0.5f) ? M_CLEAN_PAW : M_CLEAN_EAR);
+                s.decide_in = 5.0f + 3.0f * frand01();
             }
             break;
 
@@ -1107,14 +1110,16 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 start_goal(2);
                 break;
             }
-            if (s.since_touch > SLEEP_AFTER_S) {
+            // A full exercise bar is a cat who wants his nap: he dozes off
+            // sooner the more of his day he has already had.
+            if (s.since_touch > SLEEP_AFTER_S * (1.4f - 0.8f * f01(s.st_x))) {
                 enter(M_SLEEP);
                 break;
             }
             s.decide_in -= dt;
             if (s.decide_in <= 0.0f) {
                 // A hungry cat drifts to where food appears and waits there.
-                if (s.st_h < 35 && s.food_spot_set && frand01() < 0.5f &&
+                if (s.st_f < 35 && s.food_spot_set && frand01() < 0.5f &&
                     fabsf(world_delta(s.world_x, s.food_spot)) >
                         8.0f * PIX_SCALE) {
                     start_goal(3);
@@ -1311,11 +1316,10 @@ float cat_take_walked(void)
     return v;
 }
 
-void cat_set_stats(int hunger, int affection, int energy, int exercise)
+void cat_set_stats(int food, int affection, int exercise)
 {
-    s.st_h = hunger;
+    s.st_f = food;
     s.st_a = affection;
-    s.st_e = energy;
     s.st_x = exercise;
 }
 
@@ -1535,11 +1539,10 @@ static void draw_heart_icon(int x0, int y0, int level)
     }
 }
 
-static int min4(int a, int b, int c, int d)
+static int min3(int a, int b, int c)
 {
-    int m = a < b ? a : b;
-    m = m < c ? m : c;
-    return m < d ? m : d;
+    const int m = a < b ? a : b;
+    return m < c ? m : c;
 }
 
 static void compose(void)
@@ -1597,8 +1600,8 @@ static void compose(void)
     // an icon brightens as an invitation when its stat wants attention.
     stamp_icon(2, 1, ICON_BALL, 6, s.ball_alive || s.st_x < 35);
     stamp_icon(10, 2, ICON_FISH, 5,
-               (s.bowl_alive && s.bowl_fresh) || s.st_h < 40);
-    const int worst = min4(s.st_h, s.st_a, s.st_e, s.st_x);
+               (s.bowl_alive && s.bowl_fresh) || s.st_f < 40);
+    const int worst = min3(s.st_f, s.st_a, s.st_x);
     const int halves = (worst * 6 + 50) / 100;
     for (int i = 0; i < 3; i++) {
         int lvl = halves - 2 * i;
@@ -1636,7 +1639,7 @@ static void compose(void)
 
 // 3x5 font, rows top to bottom, bit 2 = left pixel. Digits, %, then the
 // letters the status page needs.
-enum { GL_PCT = 10, GL_H, GL_A, GL_E, GL_X, GL_B, GL_P };
+enum { GL_PCT = 10, GL_F, GL_A, GL_E, GL_X, GL_B, GL_P };
 
 static const uint8_t k_font[17][5] = {
     {7, 5, 5, 5, 7},  // 0
@@ -1650,7 +1653,7 @@ static const uint8_t k_font[17][5] = {
     {7, 5, 7, 5, 7},  // 8
     {7, 5, 7, 1, 7},  // 9
     {5, 1, 2, 4, 5},  // %
-    {5, 5, 7, 5, 5},  // H
+    {7, 4, 6, 4, 4},  // F
     {2, 5, 7, 5, 5},  // A
     {7, 4, 6, 4, 7},  // E
     {5, 5, 2, 5, 5},  // X
@@ -1686,8 +1689,8 @@ static int draw_number(int x, int y, int v, uint8_t col)  // returns next x
     return x;
 }
 
-// Full-screen status page (tap the hearts): four labelled stat bars, then
-// battery and the outstanding poop count along the bottom.
+// Full-screen status page (tap the hearts): three labelled stat bars — all
+// aspiring to be full — then battery and the poop count along the bottom.
 static void compose_status(void)
 {
     memset(s_canvas, C_BLACK, sizeof(s_canvas));
@@ -1695,13 +1698,13 @@ static void compose_status(void)
     const struct {
         int glyph;
         int val;
-    } rows[4] = {
-        {GL_H, s.st_h}, {GL_A, s.st_a}, {GL_E, s.st_e}, {GL_X, s.st_x},
+    } rows[3] = {
+        {GL_F, s.st_f}, {GL_A, s.st_a}, {GL_X, s.st_x},
     };
 
     const int bx = 8, bw = 34;
-    for (int i = 0; i < 4; i++) {
-        const int by = 3 + i * 8;
+    for (int i = 0; i < 3; i++) {
+        const int by = 5 + i * 10;
         const int val = (rows[i].val < 0) ? 0 : rows[i].val;
         draw_glyph(3, by + 1, rows[i].glyph, C_WHITE);
         for (int x = 0; x < bw; x++) {

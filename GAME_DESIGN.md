@@ -6,18 +6,20 @@ attention makes him yours, and everything is always recoverable.
 
 ## Stats
 
-Four stats, 0–100, persisted in NVS (saved every 5 minutes and on events),
+Three stats, 0–100, persisted in NVS (saved every 5 minutes and on events),
 simulated through offline time via the RTC on wake, capped so an absence
-reads as "hungry cat", never "tragedy".
+reads as "hungry cat", never "tragedy". **Every bar aspires to be full**:
+fed, loved, exercised — one direction, no mixed readings.
 
 | Stat | Up | Down | Expressed as |
 |---|---|---|---|
-| Hunger | eating | ~6 h full→hungry while awake and active; ¼ rate asleep; exercise burns it faster | food-seeking, standing near the food spot |
+| Food | eating | ~6 h fed→hungry while awake and active; ¼ rate asleep; exercise burns it faster | food-seeking, standing near the food spot |
 | Affection | petting, play, making peace after a scare | slow decay; visible poop; ignoring him; **being scared (shake)** | distance kept from centre, purr strength, heart frequency, tap responsiveness |
-| Energy | his sleep (sun schedule) | play, exercise, being kept awake | sluggish vs snappy animations, loaf frequency |
-| Exercise | tilt-walking distance, jumps, play sessions | daily reset | spry gait vs extra loafing |
+| Exercise | tilt-walking distance, jumps, play sessions | daily reset | a filling bar IS his tiredness: pleasantly worn out, slower pace, longer loafs, earlier naps; the morning reset is a fresh, spry cat |
 
-Petting has diminishing returns per session — spam doesn't max a cat.
+There is no separate energy stat — a full exercise bar implies a cat who
+wants his sleep, and the daily reset hands him a new morning. Petting has
+diminishing returns per session — spam doesn't max a cat.
 
 ## HUD (no menu)
 
@@ -28,16 +30,17 @@ is the HUD. No navigation state, no open/close.
   **Top-right**: battery (existing).
 - Every icon shows something at a glance and does something when tapped:
   - **Fish** → a bowl drops into the world; he notices, trots over, eats
-    (groom/slurp reuse). One bowl at a time; an untouched bowl despawns.
+    (groom/slurp reuse), and washes up after dinner like a real cat. One
+    bowl at a time; an untouched bowl despawns.
   - **Yarn ball** → 60 s play session: a ball drops into the world and he
     plays with it — paw-batting and pouncing jumps, the **only** place the
     pawing and big-jump animations appear. Play scores double exercise and
     extra hearts. Outside play, tapping him just earns a glance and a tail
     flick; the pawing animation leaves the idle rotation.
   - **Hearts** → show his *worst* current need in six half-heart steps
-    (min of the four stats) — low hearts always mean something specific
-    needs doing. Tap for the full-screen status page: four stat bars +
-    battery + poop count, tap to exit.
+    (min of the three stats) — low hearts always mean something specific
+    needs doing. Tap for the full-screen status page: three stat bars
+    (F / A / X) + battery + poop count, tap to exit.
   - **Battery** → the existing full-screen gauge.
 - Quiet HUD: icons render dim so the park stays scenic; an icon brightens
   as an invitation when its stat genuinely wants attention (fish glows when

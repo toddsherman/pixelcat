@@ -3,18 +3,19 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// The care stats (GAME_DESIGN.md): four 0..100 values simulated continuously
-// while the device runs and caught up through offline gaps at boot. The
-// simulation half is pure C (no RTOS, no hardware) so it can also run in a
-// host harness; persistence lives behind ESP_PLATFORM.
+// The care stats (GAME_DESIGN.md): three 0..100 values simulated
+// continuously while the device runs and caught up through offline gaps at
+// boot. The simulation half is pure C (no RTOS, no hardware) so it can also
+// run in a host harness; persistence lives behind ESP_PLATFORM.
 //
-// 100 always means "good": full, loved, rested, exercised.
+// Every bar aspires to be full: fed, loved, exercised. There is no separate
+// energy stat — a filled exercise bar IS a tired cat (he gets sleepy as it
+// fills and wakes up fresh when it resets with the new day).
 
 typedef struct {
-    float hunger;     // 100 full .. 0 hungry
+    float food;       // 100 fed .. 0 hungry
     float affection;  // 100 devoted .. 0 aloof
-    float energy;     // 100 rested .. 0 exhausted
-    float exercise;   // today's activity, resets daily
+    float exercise;   // today's activity; full = satisfied and sleepy
 } stats_t;
 
 void stats_reset(void);

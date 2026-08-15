@@ -359,8 +359,8 @@ static void cat_task(void *arg)
                 cat_set_battery(pct, chg);
             }
             const stats_t *sv = stats_get();
-            cat_set_stats((int)sv->hunger, (int)sv->affection,
-                          (int)sv->energy, (int)sv->exercise);
+            cat_set_stats((int)sv->food, (int)sv->affection,
+                          (int)sv->exercise);
             stats_set_trust(cat_scare_level(), cat_wary());
 
             // Half-hour bucket bookkeeping, once the clock is trustworthy.
@@ -403,11 +403,11 @@ static void cat_task(void *arg)
             const stats_t *st = stats_get();
             float mic_rms, mic_amb;
             audio_mic_levels(&mic_rms, &mic_amb);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | H %d A %d E %d X %d | mic %.3f amb %.3f | fear %d%s",
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d | mic %.3f amb %.3f | fear %d%s",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
                      (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2,
                      pcf_minutes_of_day(), daypart_for_log,
-                     (int)st->hunger, (int)st->affection, (int)st->energy, (int)st->exercise,
+                     (int)st->food, (int)st->affection, (int)st->exercise,
                      (double)mic_rms, (double)mic_amb,
                      cat_scare_level(), cat_wary() ? " wary" : "");
         }

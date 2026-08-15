@@ -61,7 +61,7 @@ int cat_take_dash(void);
 float cat_take_walked(void);
 
 // Current stat values pushed in for the HUD hearts and the status page.
-void cat_set_stats(int hunger, int affection, int energy, int exercise);
+void cat_set_stats(int food, int affection, int exercise);
 
 // Drop a poop somewhere in the walked world (boot restore + due timer).
 void cat_spawn_poop(void);

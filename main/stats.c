@@ -7,12 +7,12 @@
 // human-scale numbers.
 // ---------------------------------------------------------------------------
 
-// Full to hungry in ~6 h awake; a sleeping cat burns a quarter of that.
-#define HUNGER_PER_S (100.0f / (6.0f * 3600.0f))
-#define HUNGER_SLEEP_FACTOR 0.25f
+// Fed to hungry in ~6 h awake; a sleeping cat burns a quarter of that.
+#define FOOD_PER_S (100.0f / (6.0f * 3600.0f))
+#define FOOD_SLEEP_FACTOR 0.25f
 // Exercise burns it faster: walking and jumping cost extra on top.
-#define HUNGER_PER_PX (100.0f / 50000.0f)
-#define HUNGER_PER_JUMP 0.15f
+#define FOOD_PER_PX (100.0f / 50000.0f)
+#define FOOD_PER_JUMP 0.15f
 
 // Ignored for two days = affection gone; half rate while he sleeps.
 #define AFFECT_DECAY_PER_S (100.0f / (48.0f * 3600.0f))
@@ -29,12 +29,6 @@
 #define PET_BUDGET_REFILL_S (40.0f * 60.0f)
 #define PET_PURR_MIN 0.2f  // above the sleeping purr, below any petting purr
 
-// A ~90 min nap fully recharges him; being awake drains slowly on its own.
-#define ENERGY_SLEEP_REGEN_PER_S (100.0f / (90.0f * 60.0f))
-#define ENERGY_AWAKE_DRAIN_PER_S (100.0f / (16.0f * 3600.0f))
-#define ENERGY_PER_PX (100.0f / 80000.0f)
-#define ENERGY_PER_JUMP 0.5f
-
 // A good active day: ~3500 logical px of walking, or ~50 jumps, or a mix.
 #define EXER_PER_PX (100.0f / 3500.0f)
 #define EXER_PER_JUMP 2.0f
@@ -42,8 +36,7 @@
 // Play sessions score double exercise and extra hearts (the spec's words).
 #define PLAY_EXER_PER_HIT (2.0f * EXER_PER_JUMP)
 #define PLAY_AFFECT_PER_HIT 0.6f
-#define PLAY_ENERGY_PER_HIT 0.7f
-#define PLAY_HUNGER_PER_HIT 0.2f
+#define PLAY_FOOD_PER_HIT 0.2f
 
 // A meal shows up again as a poop 2-4 h later; each one left visible has an
 // hourly affection price — he has standards.
@@ -104,9 +97,8 @@ static float clamp01_100(float v)
 void stats_reset(void)
 {
     // A new cat arrives fed, curious and a little reserved.
-    s_stats.hunger = 85.0f;
+    s_stats.food = 85.0f;
     s_stats.affection = 55.0f;
-    s_stats.energy = 90.0f;
     s_stats.exercise = 0.0f;
     s_pet_budget = PET_SESSION_BUDGET;
     s_day_serial = 0;
@@ -125,7 +117,7 @@ void stats_tick(float dt, bool asleep, float purr)
         return;
     }
 
-    s_stats.hunger -= dt * HUNGER_PER_S * (asleep ? HUNGER_SLEEP_FACTOR : 1.0f);
+    s_stats.food -= dt * FOOD_PER_S * (asleep ? FOOD_SLEEP_FACTOR : 1.0f);
     s_stats.affection -= dt * (AFFECT_DECAY_PER_S * (asleep ? 0.5f : 1.0f) +
                                (float)s_poop_count * POOP_AFFECT_PER_S);
 
@@ -151,12 +143,8 @@ void stats_tick(float dt, bool asleep, float purr)
         }
     }
 
-    s_stats.energy += dt * (asleep ? ENERGY_SLEEP_REGEN_PER_S
-                                   : -ENERGY_AWAKE_DRAIN_PER_S);
-
-    s_stats.hunger = clamp01_100(s_stats.hunger);
+    s_stats.food = clamp01_100(s_stats.food);
     s_stats.affection = clamp01_100(s_stats.affection);
-    s_stats.energy = clamp01_100(s_stats.energy);
 }
 
 void stats_on_walk(float logical_px)
@@ -165,15 +153,13 @@ void stats_on_walk(float logical_px)
         return;
     }
     s_stats.exercise = clamp01_100(s_stats.exercise + logical_px * EXER_PER_PX);
-    s_stats.hunger = clamp01_100(s_stats.hunger - logical_px * HUNGER_PER_PX);
-    s_stats.energy = clamp01_100(s_stats.energy - logical_px * ENERGY_PER_PX);
+    s_stats.food = clamp01_100(s_stats.food - logical_px * FOOD_PER_PX);
 }
 
 void stats_on_jump(void)
 {
     s_stats.exercise = clamp01_100(s_stats.exercise + EXER_PER_JUMP);
-    s_stats.hunger = clamp01_100(s_stats.hunger - HUNGER_PER_JUMP);
-    s_stats.energy = clamp01_100(s_stats.energy - ENERGY_PER_JUMP);
+    s_stats.food = clamp01_100(s_stats.food - FOOD_PER_JUMP);
 }
 
 void stats_on_scare(int level)
@@ -195,15 +181,14 @@ void stats_on_reconcile(void)
 
 void stats_on_eat(float amount)
 {
-    s_stats.hunger = clamp01_100(s_stats.hunger + amount);
+    s_stats.food = clamp01_100(s_stats.food + amount);
 }
 
 void stats_on_play_hit(void)
 {
     s_stats.exercise = clamp01_100(s_stats.exercise + PLAY_EXER_PER_HIT);
     s_stats.affection = clamp01_100(s_stats.affection + PLAY_AFFECT_PER_HIT);
-    s_stats.energy = clamp01_100(s_stats.energy - PLAY_ENERGY_PER_HIT);
-    s_stats.hunger = clamp01_100(s_stats.hunger - PLAY_HUNGER_PER_HIT);
+    s_stats.food = clamp01_100(s_stats.food - PLAY_FOOD_PER_HIT);
 }
 
 void stats_note_fed(void)
@@ -253,14 +238,14 @@ void stats_offline(double seconds)
     }
     const float sec = (float)seconds;
 
-    // He slept through it: gentle hunger, full-rate rest, mild fading — each
-    // floored so an absence never reads as tragedy.
-    float h = s_stats.hunger - sec * HUNGER_PER_S * HUNGER_SLEEP_FACTOR;
+    // He slept through it: gentle appetite, mild fading — each floored so an
+    // absence never reads as tragedy.
+    float h = s_stats.food - sec * FOOD_PER_S * FOOD_SLEEP_FACTOR;
     if (h < OFFLINE_HUNGER_FLOOR) {
-        h = (s_stats.hunger < OFFLINE_HUNGER_FLOOR) ? s_stats.hunger
-                                                    : OFFLINE_HUNGER_FLOOR;
+        h = (s_stats.food < OFFLINE_HUNGER_FLOOR) ? s_stats.food
+                                                  : OFFLINE_HUNGER_FLOOR;
     }
-    s_stats.hunger = clamp01_100(h);
+    s_stats.food = clamp01_100(h);
 
     float a = s_stats.affection - sec * AFFECT_DECAY_PER_S * OFFLINE_AFFECT_FACTOR;
     if (a < OFFLINE_AFFECT_FLOOR) {
@@ -268,8 +253,6 @@ void stats_offline(double seconds)
                                                        : OFFLINE_AFFECT_FLOOR;
     }
     s_stats.affection = clamp01_100(a);
-
-    s_stats.energy = clamp01_100(s_stats.energy + sec * ENERGY_SLEEP_REGEN_PER_S);
 
     if (s_poop_due_s > 0.0f) {
         s_poop_due_s -= sec * 0.25f;
@@ -293,8 +276,11 @@ void stats_offline(double seconds)
 
 #define STATS_MAGIC_V1 0x50435331u  // 'PCS1'
 #define STATS_MAGIC_V2 0x50435332u  // 'PCS2': adds the poop fields
-#define STATS_MAGIC 0x50435333u     // 'PCS3': adds trust (scares, wariness)
+#define STATS_MAGIC_V3 0x50435333u  // 'PCS3': adds trust (scares, wariness)
+#define STATS_MAGIC 0x50435334u     // 'PCS4': energy retired; hunger is food
 
+// The retired layouts, exactly as they were written (sizeof must match the
+// stored blob lengths, trailing padding included).
 typedef struct {
     uint32_t magic;
     float hunger, affection, energy, exercise;
@@ -316,6 +302,18 @@ typedef struct {
 typedef struct {
     uint32_t magic;
     float hunger, affection, energy, exercise;
+    float pet_budget;
+    int64_t saved_epoch;
+    int32_t day_serial;
+    float poop_due_s;
+    int32_t poop_count;
+    int32_t trust_level;
+    int32_t trust_wary;
+} stats_blob_v3_t;
+
+typedef struct {
+    uint32_t magic;
+    float food, affection, exercise;
     float pet_budget;
     int64_t saved_epoch;
     int32_t day_serial;
@@ -356,29 +354,46 @@ bool stats_store_load(void)
     if (nvs_open("pixelcat", NVS_READONLY, &h) != ESP_OK) {
         return false;  // first boot: the namespace does not exist yet
     }
-    stats_blob_t b;
-    size_t len = sizeof(b);
-    const esp_err_t ret = nvs_get_blob(h, "stats", &b, &len);
+    union {
+        stats_blob_t v4;
+        stats_blob_v3_t v3;  // v1/v2 are prefixes of this layout
+    } u;
+    size_t len = sizeof(u);
+    const esp_err_t ret = nvs_get_blob(h, "stats", &u, &len);
     nvs_close(h);
     if (ret != ESP_OK) {
         return false;
     }
-    // Older cats migrate: each missing tail gets its defaults.
-    if (len == sizeof(stats_blob_v1_t) && b.magic == STATS_MAGIC_V1) {
-        b.poop_due_s = 0.0f;
-        b.poop_count = 0;
-        b.trust_level = 0;
-        b.trust_wary = 0;
-    } else if (len == sizeof(stats_blob_v2_t) && b.magic == STATS_MAGIC_V2) {
-        b.trust_level = 0;
-        b.trust_wary = 0;
-    } else if (len != sizeof(b) || b.magic != STATS_MAGIC) {
+
+    stats_blob_t b;
+    if (len == sizeof(stats_blob_t) && u.v4.magic == STATS_MAGIC) {
+        b = u.v4;
+    } else if ((len == sizeof(stats_blob_v1_t) && u.v3.magic == STATS_MAGIC_V1) ||
+               (len == sizeof(stats_blob_v2_t) && u.v3.magic == STATS_MAGIC_V2) ||
+               (len == sizeof(stats_blob_v3_t) && u.v3.magic == STATS_MAGIC_V3)) {
+        // Older cats migrate: energy is simply retired, missing tails get
+        // their defaults.
+        const bool has_poop = len >= sizeof(stats_blob_v2_t);
+        const bool has_trust = len >= sizeof(stats_blob_v3_t);
+        b = (stats_blob_t){
+            .magic = STATS_MAGIC,
+            .food = u.v3.hunger,
+            .affection = u.v3.affection,
+            .exercise = u.v3.exercise,
+            .pet_budget = u.v3.pet_budget,
+            .saved_epoch = u.v3.saved_epoch,
+            .day_serial = u.v3.day_serial,
+            .poop_due_s = has_poop ? u.v3.poop_due_s : 0.0f,
+            .poop_count = has_poop ? u.v3.poop_count : 0,
+            .trust_level = has_trust ? u.v3.trust_level : 0,
+            .trust_wary = has_trust ? u.v3.trust_wary : 0,
+        };
+    } else {
         return false;
     }
 
-    s_stats.hunger = clamp01_100(b.hunger);
+    s_stats.food = clamp01_100(b.food);
     s_stats.affection = clamp01_100(b.affection);
-    s_stats.energy = clamp01_100(b.energy);
     s_stats.exercise = clamp01_100(b.exercise);
     s_pet_budget = clamp01_100(b.pet_budget);
     s_day_serial = b.day_serial;
@@ -390,10 +405,9 @@ bool stats_store_load(void)
                                                   ? 4
                                                   : b.trust_level;
     s_trust_wary = b.trust_wary != 0;
-    ESP_LOGI(TAG, "loaded H %.0f A %.0f E %.0f X %.0f (saved epoch %lld)",
-             (double)s_stats.hunger, (double)s_stats.affection,
-             (double)s_stats.energy, (double)s_stats.exercise,
-             (long long)s_loaded_epoch);
+    ESP_LOGI(TAG, "loaded F %.0f A %.0f X %.0f (saved epoch %lld)",
+             (double)s_stats.food, (double)s_stats.affection,
+             (double)s_stats.exercise, (long long)s_loaded_epoch);
     return true;
 }
 
@@ -406,9 +420,8 @@ void stats_store_save(void)
     }
     const stats_blob_t b = {
         .magic = STATS_MAGIC,
-        .hunger = s_stats.hunger,
+        .food = s_stats.food,
         .affection = s_stats.affection,
-        .energy = s_stats.energy,
         .exercise = s_stats.exercise,
         .pet_budget = s_pet_budget,
         .saved_epoch = clock_valid() ? (int64_t)time(NULL) : 0,
@@ -442,9 +455,9 @@ void stats_apply_offline(void)
         const double gap = difftime(time(NULL), (time_t)s_loaded_epoch);
         if (gap > 60.0) {
             stats_offline(gap);
-            ESP_LOGI(TAG, "offline %.0f s -> H %.0f A %.0f E %.0f X %.0f",
-                     gap, (double)s_stats.hunger, (double)s_stats.affection,
-                     (double)s_stats.energy, (double)s_stats.exercise);
+            ESP_LOGI(TAG, "offline %.0f s -> F %.0f A %.0f X %.0f",
+                     gap, (double)s_stats.food, (double)s_stats.affection,
+                     (double)s_stats.exercise);
         }
     }
     stats_note_date(today_serial());

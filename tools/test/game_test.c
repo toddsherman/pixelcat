@@ -116,20 +116,29 @@ int main(void)
 {
     // --- Feed: fish icon tap spawns the bowl; he walks over and eats ---
     fresh_present_cat();
-    cat_set_stats(35, 62, 80, 20);
+    cat_set_stats(35, 62, 20);
     tap(CELL(13), CELL(4));  // fish icon zone
-    int ate = 0, slurps = 0;
+    int ate = 0, slurps = 0, post_slurps = 0;
     for (int i = 0; i < (int)(14.0f / DT); i++) {
         idle_frames(1);
-        ate += cat_take_eat() ? 1 : 0;
+        if (cat_take_eat()) {
+            ate++;
+            // A real cat washes up after dinner: grooming slurps follow.
+            for (int j = 0; j < (int)(4.0f / DT); j++) {
+                idle_frames(1);
+                post_slurps += cat_take_slurp() ? 1 : 0;
+            }
+            break;
+        }
         slurps += cat_take_slurp() ? 1 : 0;
     }
     expect(ate == 1, "fish tap feeds him within 14 s");
     expect(slurps >= 3, "eating slurps");
+    expect(post_slurps >= 1, "he washes up after dinner");
 
     // --- Play: ball icon tap starts a session with bats or pounces ---
     fresh_present_cat();
-    cat_set_stats(80, 62, 80, 20);
+    cat_set_stats(80, 62, 20);
     tap(CELL(4), CELL(4));  // yarn ball icon zone
     int hits = 0;
     for (int i = 0; i < (int)(20.0f / DT); i++) {
@@ -274,24 +283,21 @@ int main(void)
 
     // --- Affection shows in the purr ---
     fresh_present_cat();
-    cat_set_stats(80, 100, 80, 50);
+    cat_set_stats(80, 100, 50);
     pet_until_purr(2.0f, 5.0f);  // never reached: just pet for 5 s
     const float purr_devoted = cat_purr_level();
     fresh_present_cat();
-    cat_set_stats(80, 0, 80, 50);
+    cat_set_stats(80, 0, 50);
     pet_until_purr(2.0f, 5.0f);
     const float purr_aloof = cat_purr_level();
     expect(purr_devoted > purr_aloof + 0.1f,
            "a devoted cat purrs harder than an aloof one");
 
-    // --- Energy shows in pace: a tired cat takes longer to do anything ---
-    fresh_present_cat();
-    cat_set_stats(80, 60, 100, 50);
-    scare();
+    // --- A full exercise bar shows in his pace: pleasantly worn out ---
     int fresh_frames = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 100, 50);
+        cat_set_stats(80, 60, 0);  // a fresh morning cat
         cat_touch_t t = {0};
         cat_update(DT, &t, 8.0f, 0.0f);
         while (cat_state() != CAT_HIDING && fresh_frames < 500) {
@@ -299,32 +305,51 @@ int main(void)
             fresh_frames++;
         }
     }
-    int tired_frames = 0;
+    int worn_frames = 0;
     {
         fresh_present_cat();
-        cat_set_stats(80, 60, 0, 50);
+        cat_set_stats(80, 60, 100);  // his whole day already had
         cat_touch_t t = {0};
         cat_update(DT, &t, 8.0f, 0.0f);
-        while (cat_state() != CAT_HIDING && tired_frames < 500) {
+        while (cat_state() != CAT_HIDING && worn_frames < 500) {
             cat_update(DT, &t, 0.0f, 0.0f);
-            tired_frames++;
+            worn_frames++;
         }
     }
-    expect(tired_frames > fresh_frames + 10,
-           "a tired cat is slower to react than a rested one");
+    expect(worn_frames > fresh_frames + 10,
+           "a well-exercised cat runs a beat slower than a fresh one");
+
+    // --- ...and in his bedtime: he dozes off sooner once the bar fills ---
+    int doze_worn = 0, doze_fresh = 0;
+    {
+        fresh_present_cat();
+        cat_set_stats(80, 60, 100);
+        while (cat_state() != CAT_SLEEPING && doze_worn < 4000) {
+            idle_frames(1);
+            doze_worn++;
+        }
+        fresh_present_cat();
+        cat_set_stats(80, 60, 0);
+        while (cat_state() != CAT_SLEEPING && doze_fresh < 4000) {
+            idle_frames(1);
+            doze_fresh++;
+        }
+    }
+    expect(doze_worn < doze_fresh,
+           "a full exercise bar means an earlier nap");
 
     // --- Hunger pulls him to the food spot ---
     float span_hungry = 0.0f, span_full = 0.0f;
     for (int hungry = 0; hungry < 2; hungry++) {
         fresh_present_cat();
-        cat_set_stats(80, 60, 80, 50);
+        cat_set_stats(80, 60, 50);
         cat_debug_force(50);  // bowl: establishes the food spot
         for (int i = 0; i < (int)(14.0f / DT); i++) {
             idle_frames(1);
         }
         drain_events();
         const float spot = cat_debug_world();
-        cat_set_stats(hungry ? 10 : 95, 60, 80, 50);
+        cat_set_stats(hungry ? 10 : 95, 60, 50);
         float max_d = 0.0f;
         for (int i = 0; i < (int)(60.0f / DT); i++) {
             idle_frames(1);
