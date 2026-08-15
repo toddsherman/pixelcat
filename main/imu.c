@@ -65,11 +65,11 @@ esp_err_t imu_init(i2c_master_bus_handle_t bus)
 
 float imu_tilt_x(void)
 {
-    // Board axis mapping (same as fluidbox measured, valid on V2 as well):
-    // screen-x gravity is the negated IMU y axis. The earlier confusion here
-    // came from the sensor returning pegged garbage before its CTRL1 setup
-    // was in place, not from the mapping.
-    return s_ready ? -s_lp[1] : 0.0f;
+    // Landscape (device rotated 90 CCW): the viewer's horizontal axis is the
+    // portrait screen's vertical, which the IMU reports on x. Portrait screen-
+    // down reads +x and is now the viewer's right, and gravity is the negated
+    // reaction, so viewer-right tilt = -lp[0].
+    return s_ready ? -s_lp[0] : 0.0f;
 }
 
 void imu_gravity(float out[3])

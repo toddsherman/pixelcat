@@ -121,7 +121,11 @@ static void cat_task(void *arg)
         touch_state_t ts;
         touch_read(&ts);
 
-        const cat_touch_t ct = {.down = ts.down, .x = ts.x, .y = ts.y};
+        // Rotate touch into the logical landscape frame: viewer x runs down
+        // the portrait panel, viewer y runs from panel right to panel left.
+        const cat_touch_t ct = {.down = ts.down,
+                                .x = ts.y,
+                                .y = (int16_t)(LCD_H_RES - 1 - ts.x)};
         const float shake = imu_shake();
         cat_update(dt, &ct, shake, imu_tilt_x());
 

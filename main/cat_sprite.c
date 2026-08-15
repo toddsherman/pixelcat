@@ -73,7 +73,7 @@ static uint16_t s_pal565[BG_VARIANTS][C_COUNT];
 
 static uint8_t s_canvas[CANVAS_W * CANVAS_H];
 
-#define FLOOR_Y 51   // feet on the path
+#define FLOOR_Y 42   // feet on the path (landscape logical rows)
 #define BG_FPS 3.0f
 #define SPRITE_W ANIM_W
 #define POS_MIN 1.0f
@@ -916,16 +916,20 @@ void cat_render(void)
 
         for (int row = 0; row < BAND_ROWS; row++) {
             uint16_t *out = buf + row * LCD_H_RES;
-            memcpy(out, &bg[(y0 + row) * BG_W], LCD_H_RES * sizeof(uint16_t));
+            // Backgrounds are baked pre-rotated, so this stays a straight copy.
+            memcpy(out, &bg[(y0 + row) * LCD_H_RES], LCD_H_RES * sizeof(uint16_t));
 
-            // Sprite overlay: only non-transparent cells cover the scene.
-            const uint8_t *crow = &s_canvas[((y0 + row) / PIX_SCALE) * CANVAS_W];
+            // Rotated overlay: a panel row is a logical column. The panel row
+            // fixes the logical x cell; walking panel columns descends the
+            // logical y cells (panel x = 367 maps to logical y = 0).
+            const int lx_cell = (y0 + row) / PIX_SCALE;
             const uint16_t *pal = s_pal565[s.batt_screen ? BG_DAY : s.daypart];
-            for (int cx = 0; cx < CANVAS_W; cx++) {
-                const uint8_t ci = crow[cx];
+            for (int pxb = 0; pxb < LCD_H_RES / PIX_SCALE; pxb++) {
+                const int ly_cell = (LCD_H_RES / PIX_SCALE - 1) - pxb;
+                const uint8_t ci = s_canvas[ly_cell * CANVAS_W + lx_cell];
                 if (ci) {
                     const uint16_t c = pal[ci];
-                    uint16_t *o = out + cx * PIX_SCALE;
+                    uint16_t *o = out + pxb * PIX_SCALE;
                     for (int r = 0; r < PIX_SCALE; r++) {
                         o[r] = c;
                     }

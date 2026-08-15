@@ -22,16 +22,31 @@
 // 0 = the original big kawaii cat.
 #define CAT_SPRITE_STYLE 1
 
+// The device is held rotated 90 degrees counter-clockwise: the panel scans
+// portrait 368x448, but everything logical is landscape 448x368. Rotation is
+// done in software — backgrounds are baked pre-rotated, the sprite overlay
+// maps through the rotation at render time.
+#define ROTATE_CCW 1
+
 // The cat is composed on a small indexed-colour canvas and scaled up by an
-// integer factor to the panel. The sprite cat runs chunkier (8x, 46x56 canvas)
-// than the big cat (4x, 92x112).
+// integer factor to the panel. The sprite cat runs chunkier (8x) than the
+// big cat (4x).
 #if CAT_SPRITE_STYLE
 #define PIX_SCALE 8
 #else
 #define PIX_SCALE 4
 #endif
-#define CANVAS_W (LCD_H_RES / PIX_SCALE)   // 92
-#define CANVAS_H (LCD_V_RES / PIX_SCALE)   // 112
+
+// Logical (viewer) dimensions.
+#if ROTATE_CCW
+#define VIEW_W LCD_V_RES
+#define VIEW_H LCD_H_RES
+#else
+#define VIEW_W LCD_H_RES
+#define VIEW_H LCD_V_RES
+#endif
+#define CANVAS_W (VIEW_W / PIX_SCALE)
+#define CANVAS_H (VIEW_H / PIX_SCALE)
 
 // Frame pacing for animation + touch polling.
 #define CAT_FPS 30

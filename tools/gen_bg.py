@@ -12,7 +12,11 @@ Usage: gen_bg.py out_dir block frame1.png [frame2.png ...]
 """
 import sys, struct, zlib
 
-PANEL_W, PANEL_H = 368, 448
+PANEL_W, PANEL_H = 368, 448   # physical panel (portrait)
+VIEW_W, VIEW_H = 448, 368     # logical landscape the viewer sees
+# Landscape crop window of the portrait source, chosen to keep the pond and
+# path: full width, a 410-row band starting below the canopy.
+CROP_Y0_FRAC, CROP_H_FRAC = 0.22, 0.685
 
 def decode_png(path):
     d = open(path, 'rb').read()
@@ -63,10 +67,14 @@ def decode_png(path):
     return w, h, img
 
 def resize_565(w, h, img, block):
-    gw, gh = PANEL_W // block, PANEL_H // block
+    # Crop the portrait source to a landscape window, sample to the logical
+    # landscape grid, then rotate into the portrait panel layout so the
+    # firmware can keep block-copying rows.
+    cy0, ch = int(h * CROP_Y0_FRAC), int(h * CROP_H_FRAC)
+    gw, gh = VIEW_W // block, VIEW_H // block
     cells = []
     for oy in range(gh):
-        sy0, sy1 = oy * h / gh, (oy + 1) * h / gh
+        sy0, sy1 = cy0 + oy * ch / gh, cy0 + (oy + 1) * ch / gh
         for ox in range(gw):
             sx0, sx1 = ox * w / gw, (ox + 1) * w / gw
             r = g = b = n = 0
@@ -77,12 +85,18 @@ def resize_565(w, h, img, block):
             r //= n; g //= n; b //= n
             v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
             cells.append(((v >> 8) & 0xFF) | ((v & 0xFF) << 8))  # byte-swapped
-    # Expand the coarse grid back to panel resolution as hard blocks.
-    out = []
-    for oy in range(PANEL_H):
+    # Expand to logical landscape resolution as hard blocks, then rotate
+    # 90 degrees into the portrait panel layout: panel(px, py) shows
+    # logical(lx = py, ly = VIEW_H - 1 - px).
+    view = []
+    for oy in range(VIEW_H):
         crow = cells[min(oy // block, gh - 1) * gw:]
-        for ox in range(PANEL_W):
-            out.append(crow[min(ox // block, gw - 1)])
+        for ox in range(VIEW_W):
+            view.append(crow[min(ox // block, gw - 1)])
+    out = []
+    for py in range(PANEL_H):
+        for px in range(PANEL_W):
+            out.append(view[(VIEW_H - 1 - px) * VIEW_W + py])
     return out
 
 def mixg(c, gray, k):

@@ -78,8 +78,13 @@ int main(int argc, char **argv)
 
     cat_render();
 
-    printf("P6\n%d %d\n255\n", LCD_H_RES, LCD_V_RES);
-    for (int i = 0; i < LCD_V_RES * LCD_H_RES; i++) {
+    // Emit the viewer's landscape frame: logical(lx, ly) lives at panel
+    // (px = LCD_H_RES - 1 - ly, py = lx).
+    printf("P6\n%d %d\n255\n", LCD_V_RES, LCD_H_RES);
+    for (int n = 0; n < LCD_V_RES * LCD_H_RES; n++) {
+        const int lx = n % LCD_V_RES;
+        const int ly = n / LCD_V_RES;
+        const int i = lx * LCD_H_RES + (LCD_H_RES - 1 - ly);
         const uint16_t v = (uint16_t)((s_frame[i] >> 8) | (s_frame[i] << 8));
         const unsigned char rgb[3] = {
             (unsigned char)(((v >> 11) & 0x1F) * 255 / 31),
