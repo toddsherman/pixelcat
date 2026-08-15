@@ -205,13 +205,51 @@ static void cat_task(void *arg)
         cat_update(dt, &ct, shake, tilt);
 
         const bool button_press = button_take_short_press();
+        const bool boot_press = boot_take_press();
         if (button_press) {
             ESP_LOGI(TAG, "PWR pressed");
+        }
+
+        // Buttons drive the test menu: PWR opens it and steps through,
+        // BOOT chooses. Everything here was otherwise a rebuild away.
+        if (button_press) {
+            if (cat_test_is_open()) {
+                cat_test_next();
+            } else {
+                cat_test_open();
+            }
+        }
+        if (boot_press && cat_test_is_open()) {
+            switch (cat_test_select()) {
+                case TEST_FILL:
+                    stats_debug_set(100.0f);
+                    cat_test_close();
+                    break;
+                case TEST_EMPTY:
+                    stats_debug_set(0.0f);
+                    cat_test_close();
+                    break;
+                case TEST_AUDITION: {
+                    struct tm lt;
+                    const int mins =
+                        wall_clock(&lt) ? lt.tm_hour * 60 + lt.tm_min : 12 * 60;
+                    audition_start(ENTICE_MEOW, model_period(mins), now);
+                    cat_test_close();
+                    break;
+                }
+                case TEST_SLEEP:
+                    cat_test_close();
+                    power_sleep_now();
+                    break;
+                default:
+                    break;  // the engine handled it
+            }
         }
         const bool user_act =
             ts.down || shake > 0.8f || fabsf(tilt) > 2.0f || button_press;
 
-        if (ts.down || shake > 0.8f || button_press) {
+        if (ts.down || shake > 0.8f || button_press || boot_press ||
+            cat_test_is_open()) {
             power_note_activity();
         }
         power_idle_check();
@@ -394,6 +432,19 @@ static void cat_task(void *arg)
                 cat_set_battery(pct, chg);
             }
             stats_set_trust(cat_scare_level(), cat_wary());
+
+            // Two lines of context under the test menu.
+            {
+                uint64_t total = 0, freeb = 0;
+                sdcard_usage(&total, &freeb);
+                char a[24], b[24];
+                snprintf(a, sizeof(a), "SD %uMB UP %us",
+                         (unsigned)(freeb / (1024 * 1024)),
+                         (unsigned)(now / 1000000));
+                snprintf(b, sizeof(b), "FEAR %d ERR %d", cat_scare_level(),
+                         cat_flush_errors());
+                cat_set_debug_lines(a, b);
+            }
 
             // Half-hour bucket bookkeeping, once the clock is trustworthy.
             struct tm lt;

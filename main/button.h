@@ -18,3 +18,6 @@ bool button_take_short_press(void);
 
 // Instantaneous PWR level, for the sleep poll.
 bool button_pressed_raw(void);
+
+// True once per press of the BOOT button (GPIO0), for the test menu.
+bool boot_take_press(void);

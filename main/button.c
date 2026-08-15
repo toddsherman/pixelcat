@@ -1,5 +1,7 @@
 #include "button.h"
 
+#include "driver/gpio.h"
+
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -118,4 +120,27 @@ bool button_take_short_press(void)
         return true;
     }
     return false;
+}
+
+// BOOT (GPIO0): the only other button, active low with an external pull-up.
+// Used awake as the test menu's "choose"; power.c owns it during sleep.
+#define BOOT_GPIO GPIO_NUM_0
+
+bool boot_take_press(void)
+{
+    static bool was_down;
+    static bool configured;
+    if (!configured) {
+        const gpio_config_t cfg = {
+            .pin_bit_mask = 1ULL << BOOT_GPIO,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+        };
+        gpio_config(&cfg);
+        configured = true;
+    }
+    const bool down = gpio_get_level(BOOT_GPIO) == 0;
+    const bool pressed = down && !was_down;
+    was_down = down;
+    return pressed;
 }

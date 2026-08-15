@@ -60,6 +60,9 @@ bool stats_trust_wary(void);
 
 void stats_seed(uint32_t seed);
 
+// Test menu: slam every gauge to one value.
+void stats_debug_set(float v);
+
 // Local calendar date as y*10000+m*100+d. Rolls the streak ledger.
 void stats_note_date(int32_t day_serial);
 

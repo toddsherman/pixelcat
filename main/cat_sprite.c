@@ -12,6 +12,7 @@
 #include "cat.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cat_anims.h"
@@ -379,6 +380,10 @@ static struct {
     int st_f, st_a, st_x, st_p, st_s;  // gauge values pushed in by main
     int streaks[5];                    // play, food, love, exercise, sleep
     int hits[5];                       // gauge reached full today
+    bool test_menu;                    // the button-driven test menu is up
+    int test_sel;
+    bool daypart_forced;               // a forced daypart outranks the clock
+    char dbg_line1[24], dbg_line2[24];
 
     // Camera and trust (Phase 3). Normally the camera is pinned to the cat;
     // absence, fleeing and hiding set it free.
@@ -761,7 +766,12 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const int side_of = (s.last_x < RUN_ZONE_L) ? -1 : (s.last_x > RUN_ZONE_R) ? 1 : 0;
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
 
-    // The menu screen swallows all interaction: one tap exits.
+    // The menus swallow all interaction; the test menu is button-driven.
+    if (s.test_menu) {
+        s.purr = fmaxf(0.0f, s.purr - PET_RAMP_DOWN * dt);
+        s.was_down = touch->down;
+        return;
+    }
     if (s.status_screen) {
         if (released_tap) {
             s.status_screen = false;
@@ -1431,7 +1441,9 @@ void cat_set_battery(int percent, bool charging)
 
 void cat_set_daypart(int variant)
 {
-    if (variant >= 0 && variant < BG_VARIANTS) {
+    // A daypart chosen in the test menu sticks until the next reboot, so
+    // the art can be checked without waiting for the sun.
+    if (!s.daypart_forced && variant >= 0 && variant < BG_VARIANTS) {
         s.daypart = variant;
     }
 }
@@ -1656,18 +1668,12 @@ static void compose(void)
 // The menu screen and its little blocky font.
 // ---------------------------------------------------------------------------
 
-// 3x5 font, rows top to bottom, bit 2 = left pixel. Digits, %, then the
-// letters the menu needs. GL_O is just the zero digit.
-enum {
-    GL_O = 0,
-    GL_PCT = 10,
-    GL_F, GL_A, GL_E, GL_X, GL_B, GL_P,
-    GL_L, GL_Y, GL_D, GL_V, GL_R, GL_C, GL_I, GL_S,
-    GL_T, GL_CHK,
-};
-
-static const uint8_t k_font[27][5] = {
-    {7, 5, 5, 5, 7},  // 0 / O
+// A 3x5 blocky font, indexed by character: 5 rows per glyph, bit 2 is the
+// leftmost pixel. Enough of an alphabet to write words on screen rather
+// than assemble them from glyph ids.
+static const uint8_t k_font[][5] = {
+    {0, 0, 0, 0, 0},  // space
+    {7, 5, 5, 5, 7},  // 0
     {2, 6, 2, 2, 7},  // 1
     {7, 1, 7, 4, 7},  // 2
     {7, 1, 7, 1, 7},  // 3
@@ -1677,24 +1683,62 @@ static const uint8_t k_font[27][5] = {
     {7, 1, 1, 1, 1},  // 7
     {7, 5, 7, 5, 7},  // 8
     {7, 5, 7, 1, 7},  // 9
-    {5, 1, 2, 4, 5},  // %
-    {7, 4, 6, 4, 4},  // F
     {2, 5, 7, 5, 5},  // A
-    {7, 4, 6, 4, 7},  // E
-    {5, 5, 2, 5, 5},  // X
     {6, 5, 6, 5, 6},  // B
-    {6, 5, 6, 4, 4},  // P
-    {4, 4, 4, 4, 7},  // L
-    {5, 5, 2, 2, 2},  // Y
-    {6, 5, 5, 5, 6},  // D
-    {5, 5, 5, 5, 2},  // V
-    {6, 5, 6, 5, 5},  // R
     {7, 4, 4, 4, 7},  // C
+    {6, 5, 5, 5, 6},  // D
+    {7, 4, 6, 4, 7},  // E
+    {7, 4, 6, 4, 4},  // F
+    {7, 4, 5, 5, 7},  // G
+    {5, 5, 7, 5, 5},  // H
     {7, 2, 2, 2, 7},  // I
+    {1, 1, 1, 5, 7},  // J
+    {5, 5, 6, 5, 5},  // K
+    {4, 4, 4, 4, 7},  // L
+    {5, 7, 7, 5, 5},  // M
+    {5, 7, 7, 7, 5},  // N
+    {7, 5, 5, 5, 7},  // O
+    {6, 5, 6, 4, 4},  // P
+    {7, 5, 5, 7, 1},  // Q
+    {6, 5, 6, 5, 5},  // R
     {7, 4, 7, 1, 7},  // S
     {7, 2, 2, 2, 2},  // T
-    {1, 1, 5, 3, 2},  // checkmark
+    {5, 5, 5, 5, 7},  // U
+    {5, 5, 5, 5, 2},  // V
+    {5, 5, 7, 7, 5},  // W
+    {5, 5, 2, 5, 5},  // X
+    {5, 5, 2, 2, 2},  // Y
+    {7, 1, 2, 4, 7},  // Z
+    {5, 1, 2, 4, 5},  // %
+    {1, 1, 5, 3, 2},  // ' (checkmark)
+    {4, 2, 1, 2, 4},  // > (cursor)
+    {0, 2, 0, 2, 0},  // :
+    {0, 0, 7, 0, 0},  // -
 };
+
+#define GL_SPACE 0
+#define GL_DIGIT0 1
+#define GL_A 11
+#define GL_PCT 37
+#define GL_CHK 38
+#define GL_CURSOR 39
+#define GL_COLON 40
+#define GL_DASH 41
+
+static int glyph_of(char c)
+{
+    if (c >= '0' && c <= '9') return GL_DIGIT0 + (c - '0');
+    if (c >= 'A' && c <= 'Z') return GL_A + (c - 'A');
+    if (c >= 'a' && c <= 'z') return GL_A + (c - 'a');
+    switch (c) {
+        case '%': return GL_PCT;
+        case '\'': return GL_CHK;
+        case '>': return GL_CURSOR;
+        case ':': return GL_COLON;
+        case '-': return GL_DASH;
+        default: return GL_SPACE;
+    }
+}
 
 static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
 {
@@ -1705,6 +1749,16 @@ static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
             }
         }
     }
+}
+
+// Returns the x just past the text.
+static int draw_text(int x, int y, const char *s, uint8_t col)
+{
+    for (; *s; s++) {
+        draw_glyph(x, y, glyph_of(*s), col);
+        x += 4;
+    }
+    return x;
 }
 
 static int draw_number(int x, int y, int v, uint8_t col)  // returns next x
@@ -1718,19 +1772,10 @@ static int draw_number(int x, int y, int v, uint8_t col)  // returns next x
     }
     g[n++] = v % 10;
     for (int i = 0; i < n; i++) {
-        draw_glyph(x, y, g[i], col);
+        draw_glyph(x, y, GL_DIGIT0 + g[i], col);
         x += 4;
     }
     return x;
-}
-
-static void draw_word(int x, int y, const uint8_t *glyphs, int n,
-                      uint8_t col)
-{
-    for (int i = 0; i < n; i++) {
-        draw_glyph(x, y, glyphs[i], col);
-        x += 4;
-    }
 }
 
 // The menu (tap the heart, dumbbell or Z): each gauge beside its word, a
@@ -1744,39 +1789,27 @@ static void compose_status(void)
     s_surf_h = MENU_H;
     memset(s_menu, C_BLACK, sizeof(s_menu));
 
-    static const uint8_t W_PLAY[] = {GL_P, GL_L, GL_A, GL_Y};
-    static const uint8_t W_FOOD[] = {GL_F, GL_O, GL_O, GL_D};
-    static const uint8_t W_LOVE[] = {GL_L, GL_O, GL_V, GL_E};
-    static const uint8_t W_EXER[] = {GL_E, GL_X, GL_E, GL_R, GL_C, GL_I,
-                                     GL_S, GL_E};
-    static const uint8_t W_SLEEP[] = {GL_S, GL_L, GL_E, GL_E, GL_P};
-    static const uint8_t W_BATT[] = {GL_B, GL_A, GL_T, GL_T};
-
     const struct {
         const char *const *art;
-        const uint8_t *word;
-        int wn;
+        const char *word;
         int val;
         int streak;
         int hit;
     } rows[5] = {
-        {ICON_BALL, W_PLAY, 4, s.st_p, s.streaks[0], s.hits[0]},
-        {ICON_FISH, W_FOOD, 4, s.st_f, s.streaks[1], s.hits[1]},
-        {ICON_HEART, W_LOVE, 4, s.st_a, s.streaks[2], s.hits[2]},
-        {ICON_EXER, W_EXER, 8, s.st_x, s.streaks[3], s.hits[3]},
-        {ICON_SLEEP, W_SLEEP, 5, s.st_s, s.streaks[4], s.hits[4]},
+        {ICON_BALL, "PLAY", s.st_p, s.streaks[0], s.hits[0]},
+        {ICON_FISH, "FOOD", s.st_f, s.streaks[1], s.hits[1]},
+        {ICON_HEART, "LOVE", s.st_a, s.streaks[2], s.hits[2]},
+        {ICON_EXER, "EXERCISE", s.st_x, s.streaks[3], s.hits[3]},
+        {ICON_SLEEP, "SLEEP", s.st_s, s.streaks[4], s.hits[4]},
     };
 
     for (int i = 0; i < 5; i++) {
         const int by = 3 + i * 9;
         stamp_gauge(10, by, rows[i].art, 6, rows[i].val);
-        draw_word(23, by + 1, rows[i].word, rows[i].wn, C_WHITE);
+        draw_text(23, by + 1, rows[i].word, C_WHITE);
         // Done today?
-        if (rows[i].hit) {
-            draw_glyph(55, by + 1, GL_CHK, C_BATT_G);
-        } else {
-            draw_glyph(55, by + 1, GL_X, C_UI_DIM);
-        }
+        draw_glyph(55, by + 1, rows[i].hit ? GL_CHK : glyph_of('X'),
+                   rows[i].hit ? C_BATT_G : C_UI_DIM);
         // The streak counts today as soon as today is done.
         int v = rows[i].streak + (rows[i].hit ? 1 : 0);
         if (v > 99) {
@@ -1785,17 +1818,127 @@ static void compose_status(void)
         const uint8_t col = rows[i].hit ? C_WHITE : C_UI_DIM;
         const int digits = (v >= 10) ? 2 : 1;
         const int nx = draw_number(68 - digits * 4, by + 1, v, col);
-        draw_glyph(nx, by + 1, GL_X, col);
+        draw_glyph(nx, by + 1, glyph_of('X'), col);
     }
 
     // Battery, one of the icons now: a gauge of charge plus its number.
     const int by = 3 + 5 * 9;
     stamp_gauge(10, by, ICON_BATT, 6, (s.batt_pct >= 0) ? s.batt_pct : 0);
-    draw_word(23, by + 1, W_BATT, 4, C_WHITE);
+    draw_text(23, by + 1, "BATT", C_WHITE);
     if (s.batt_pct >= 0) {
         const int nx = draw_number(55, by + 1, s.batt_pct, C_WHITE);
         draw_glyph(nx, by + 1, GL_PCT, C_WHITE);
     }
+}
+
+// ---------------------------------------------------------------------------
+// The test menu: hold PWR to open, PWR to move, BOOT to choose. Everything
+// here was painful to reach otherwise — forcing a daypart meant waiting for
+// dusk, testing an audition meant a rebuild.
+// ---------------------------------------------------------------------------
+
+static const char *const k_test_items[TEST_COUNT] = {
+    "DAYPART", "FILL ALL", "EMPTY ALL", "SCARE HIM",
+    "SUMMON", "AUDITION", "SLEEP NOW", "EXIT",
+};
+
+static const char *const k_daypart_names[BG_VARIANTS] = {
+    "DAY", "DAWN", "DUSK", "TWILIGHT", "NIGHT",
+};
+
+static void compose_test(void)
+{
+    s_surf = s_menu;
+    s_surf_w = MENU_W;
+    s_surf_h = MENU_H;
+    memset(s_menu, C_BLACK, sizeof(s_menu));
+
+    draw_text(3, 2, "TEST MENU", C_BATT_Y);
+
+    for (int i = 0; i < TEST_COUNT; i++) {
+        const int y = 11 + i * 6;
+        const bool on = (i == s.test_sel);
+        if (on) {
+            draw_glyph(3, y, GL_CURSOR, C_BATT_G);
+        }
+        draw_text(8, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
+    }
+    // The daypart entry shows which one it would force.
+    draw_text(44, 11, k_daypart_names[s.daypart], C_BATT_Y);
+
+    // A footer of the things worth knowing at a glance.
+    const int fy = MENU_H - 12;
+    draw_text(3, fy, s.dbg_line1, C_UI_DIM);
+    draw_text(3, fy + 6, s.dbg_line2, C_UI_DIM);
+}
+
+void cat_test_open(void)
+{
+    s.test_menu = true;
+    s.test_sel = 0;
+    s.status_screen = false;
+}
+
+bool cat_test_is_open(void)
+{
+    return s.test_menu;
+}
+
+void cat_test_next(void)
+{
+    if (s.test_menu) {
+        s.test_sel = (s.test_sel + 1) % TEST_COUNT;
+    }
+}
+
+int cat_test_select(void)
+{
+    if (!s.test_menu) {
+        return -1;
+    }
+    const int item = s.test_sel;
+    switch (item) {
+        case TEST_DAYPART:
+            s.daypart = (s.daypart + 1) % BG_VARIANTS;
+            s.daypart_forced = true;
+            break;
+        case TEST_SCARE:
+            s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
+            s.wary = true;
+            s.test_menu = false;
+            if (!s.cam_free) {
+                enter(M_ANGRY);
+                s.hiss = true;
+            }
+            break;
+        case TEST_SUMMON:
+            s.test_menu = false;
+            if (s.mode == M_ABSENT) {
+                s.summon_evt = true;
+                begin_enter();
+            } else {
+                begin_absent();
+            }
+            break;
+        case TEST_EXIT:
+            s.test_menu = false;
+            break;
+        default:
+            // FILL/EMPTY/AUDITION/SLEEP belong to main; it closes the menu.
+            break;
+    }
+    return item;
+}
+
+void cat_test_close(void)
+{
+    s.test_menu = false;
+}
+
+void cat_set_debug_lines(const char *a, const char *b)
+{
+    snprintf(s.dbg_line1, sizeof(s.dbg_line1), "%s", a ? a : "");
+    snprintf(s.dbg_line2, sizeof(s.dbg_line2), "%s", b ? b : "");
 }
 
 static int s_flush_errors;
@@ -1807,7 +1950,9 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
-    if (s.status_screen) {
+    if (s.test_menu) {
+        compose_test();
+    } else if (s.status_screen) {
         compose_status();
     } else {
         compose();
@@ -1827,7 +1972,7 @@ void cat_render(void)
         for (int row = 0; row < BAND_ROWS; row++) {
             uint16_t *out = buf + row * LCD_H_RES;
 
-            if (s.status_screen) {
+            if (s.status_screen || s.test_menu) {
                 // The menu: finer 6 px cells on black, no world behind.
                 const int lx_cell = (y0 + row) / MENU_SCALE;
                 const uint16_t *pal = s_pal565[BG_DAY];

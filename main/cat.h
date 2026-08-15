@@ -95,6 +95,23 @@ cat_state_t cat_state(void);
 // Cumulative count of failed band flushes, for diagnostics.
 int cat_flush_errors(void);
 
+// The button-driven test menu: PWR opens and steps, BOOT chooses. Items
+// the engine cannot perform itself (gauges, auditions, sleep) come back as
+// a TEST_* code for main to carry out.
+enum {
+    TEST_DAYPART = 0, TEST_FILL, TEST_EMPTY, TEST_SCARE,
+    TEST_SUMMON, TEST_AUDITION, TEST_SLEEP, TEST_EXIT, TEST_COUNT,
+};
+
+void cat_test_open(void);
+void cat_test_close(void);
+bool cat_test_is_open(void);
+void cat_test_next(void);
+int cat_test_select(void);   // -1 if the menu is not open
+
+// Two short lines of whatever is worth knowing, shown under the test menu.
+void cat_set_debug_lines(const char *a, const char *b);
+
 // Preview-only: force an internal behaviour mode. Numbers are
 // implementation-specific; harmless on hardware.
 void cat_debug_force(int mode);

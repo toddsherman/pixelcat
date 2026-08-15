@@ -259,6 +259,14 @@ int stats_hit_today(int item)
     return (item >= 0 && item < ST_COUNT) ? s_hit_today[item] : 0;
 }
 
+void stats_debug_set(float v)
+{
+    s_stats.food = s_stats.affection = s_stats.exercise = v;
+    s_stats.play = s_stats.sleep = v;
+    s_drain_t = 0.0f;
+    note_hits();
+}
+
 void stats_note_date(int32_t day_serial)
 {
     if (day_serial <= 0) {

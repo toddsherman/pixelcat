@@ -577,6 +577,12 @@ void cat_set_stats(int food, int affection, int exercise, int play,
 {
     (void)food; (void)affection; (void)exercise; (void)play; (void)sleep_v;
 }
+void cat_test_open(void) {}
+void cat_test_close(void) {}
+bool cat_test_is_open(void) { return false; }
+void cat_test_next(void) {}
+int cat_test_select(void) { return -1; }
+void cat_set_debug_lines(const char *a, const char *b) { (void)a; (void)b; }
 void cat_set_streaks(const int streaks[5], const int hits[5])
 {
     (void)streaks; (void)hits;
