@@ -32,3 +32,6 @@ void audio_swipe(void);
 // A dash whoosh for leaps: pitch sweeps up for dir > 0 (right), down for
 // dir < 0 (left).
 void audio_dash(int dir);
+
+// Stop the synth and close the codec (speaker amp off), for the idle sleep.
+void audio_stop(void);

@@ -7,6 +7,7 @@
 
 #include "audio.h"
 #include "battery.h"
+#include "power.h"
 #include "button.h"
 #include "cat.h"
 #include "config.h"
@@ -129,6 +130,11 @@ static void cat_task(void *arg)
         const float shake = imu_shake();
         cat_update(dt, &ct, shake, imu_tilt_x());
 
+        if (ts.down || shake > 0.8f) {
+            power_note_activity();
+        }
+        power_idle_check();
+
         audio_set_purr(cat_purr_level());
         if (cat_take_chirp()) {
             audio_chirp();
@@ -171,6 +177,7 @@ static void cat_task(void *arg)
 
         if (button_take_short_press()) {
             ESP_LOGI(TAG, "PWR pressed");
+            power_note_activity();
         }
 
         if (now - last_log_us > 3000000) {
@@ -237,6 +244,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(750));
 
     cat_init();
+    power_note_activity();
 
     xTaskCreatePinnedToCore(cat_task, "cat", 6144, NULL, 5, NULL, 0);
 }

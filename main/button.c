@@ -71,6 +71,15 @@ esp_err_t button_init(i2c_master_bus_handle_t bus)
     return ESP_OK;
 }
 
+bool button_pressed_raw(void)
+{
+    uint8_t input;
+    if (read_reg(EXPANDER_REG_INPUT, &input) != ESP_OK) {
+        return false;
+    }
+    return (input & PWR_BIT) != 0;
+}
+
 bool button_take_short_press(void)
 {
     uint8_t input = 0;

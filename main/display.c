@@ -223,6 +223,17 @@ esp_err_t display_flush_band(int band_index, const uint16_t *buffer)
     return esp_lcd_panel_draw_bitmap(s_panel, 0, y0, LCD_H_RES, y0 + BAND_ROWS, buffer);
 }
 
+esp_err_t display_power_off(void)
+{
+    // Display off, then sleep-in: the panel drops to microamps.
+    esp_err_t ret = esp_lcd_panel_io_tx_param(s_io, 0x28, NULL, 0);
+    if (ret == ESP_OK) {
+        ret = esp_lcd_panel_io_tx_param(s_io, 0x10, NULL, 0);
+    }
+    vTaskDelay(pdMS_TO_TICKS(120));
+    return ret;
+}
+
 esp_err_t display_set_brightness(uint8_t level)
 {
     return esp_lcd_panel_io_tx_param(s_io, LCD_CMD_BRIGHTNESS, &level, 1);

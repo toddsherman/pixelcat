@@ -29,6 +29,7 @@ static volatile bool s_boing_pending;
 static volatile bool s_slurp_pending;
 static volatile bool s_swipe_pending;
 static volatile int s_dash_pending;  // 0 none, else direction
+static volatile bool s_stop;
 
 static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
 {
@@ -359,6 +360,9 @@ static void purr_task(void *arg)
     purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f};
 
     for (;;) {
+        if (s_stop) {
+            vTaskDelete(NULL);
+        }
         fill_frame(&st, frame);
         const int ret = esp_codec_dev_write(s_speaker, frame, sizeof(frame));
         if (ret != ESP_CODEC_DEV_OK) {
@@ -419,4 +423,13 @@ void audio_swipe(void)
 void audio_dash(int dir)
 {
     s_dash_pending = (dir < 0) ? -1 : 1;
+}
+
+void audio_stop(void)
+{
+    s_stop = true;
+    vTaskDelay(pdMS_TO_TICKS(50));  // let the synth task exit
+    if (s_speaker) {
+        esp_codec_dev_close(s_speaker);  // also drops the PA enable
+    }
 }

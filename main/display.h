@@ -27,3 +27,6 @@ esp_err_t display_flush_band(int band_index, const uint16_t *buffer);
 
 // 0..255. The panel dims itself; there is no backlight pin on an AMOLED.
 esp_err_t display_set_brightness(uint8_t level);
+
+// Display off + sleep-in, for the idle power-down.
+esp_err_t display_power_off(void);

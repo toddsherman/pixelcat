@@ -15,3 +15,6 @@ esp_err_t button_init(i2c_master_bus_handle_t bus);
 
 // Call periodically. Returns true exactly once per completed short press.
 bool button_take_short_press(void);
+
+// Instantaneous PWR level, for the sleep poll.
+bool button_pressed_raw(void);
