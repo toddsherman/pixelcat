@@ -39,28 +39,25 @@ void stats_on_reconcile(void);    // peace made after a scare
 void stats_on_eat(float amount);  // finishing a bowl
 void stats_on_play_hit(void);     // one paw-bat or pounce in a play session
 
-// Streaks: consecutive days on which a gauge reached full at least once.
+// Streaks: consecutive days on which a gauge reached full at least once,
+// and whether it has already reached full today (today is not yet counted
+// in the streak until midnight rolls it over).
 int stats_streak(int item);
+int stats_hit_today(int item);
 
 // Trust state riding along in the blob (owned by the cat engine).
 void stats_set_trust(int scare_level, bool wary);
 int stats_trust_level(void);
 bool stats_trust_wary(void);
 
-// Poop: eating schedules one a few hours out; the engine spawns it when
-// ready. Visible poops cost affection hourly until cleaned.
-void stats_note_fed(void);
-bool stats_take_poop_ready(void);
-void stats_set_poop_count(int n);
-int stats_poop_count(void);
 void stats_seed(uint32_t seed);
 
 // Local calendar date as y*10000+m*100+d. Rolls the streak ledger.
 void stats_note_date(int32_t day_serial);
 
 // Apply an offline gap of this many seconds: he slept through it — the
-// sleep gauge fills, everything else drains (and resets once his sleep
-// completes), the poop timer keeps counting.
+// sleep gauge fills and everything else drains (and resets once his sleep
+// completes). Gaps under two minutes are reboots, not naps.
 void stats_offline(double seconds);
 
 #ifdef ESP_PLATFORM

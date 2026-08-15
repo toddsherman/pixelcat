@@ -43,6 +43,7 @@ enum {
     C_POOP,
     C_UI_DIM,  // quiet HUD icons
     C_ORANGE,  // the exercise gauge (Strava orange)
+    C_PURPLE,  // the sleep gauge
     C_COUNT,
 };
 
@@ -66,6 +67,7 @@ static const uint8_t s_pal_rgb[C_COUNT][3] = {
     [C_POOP] = {124, 86, 55},
     [C_UI_DIM] = {98, 98, 112},
     [C_ORANGE] = {252, 76, 2},
+    [C_PURPLE] = {156, 84, 224},
 };
 
 #define SWAP16(v) ((uint16_t)((((v) >> 8) & 0xFF) | (((v) & 0xFF) << 8)))
@@ -84,10 +86,16 @@ static uint8_t s_canvas[CANVAS_W * CANVAS_H];
 #define SPRITE_W ANIM_W
 #define CENTRE ((CANVAS_W - SPRITE_W) / 2.0f)
 
+// Every draw helper writes through px() to the current surface: the world
+// canvas normally, the menu's finer canvas while it composes.
+static uint8_t *s_surf = s_canvas;
+static int s_surf_w = CANVAS_W;
+static int s_surf_h = CANVAS_H;
+
 static inline void px(int x, int y, uint8_t c)
 {
-    if (x >= 0 && x < CANVAS_W && y >= 0 && y < CANVAS_H) {
-        s_canvas[y * CANVAS_W + x] = c;
+    if (x >= 0 && x < s_surf_w && y >= 0 && y < s_surf_h) {
+        s_surf[y * s_surf_w + x] = c;
     }
 }
 
@@ -108,9 +116,17 @@ static uint8_t char_color(char ch)
         case 'o': return C_ORANGE;
         case 'y': return C_BATT_Y;
         case 'B': return C_BATT_B;
+        case 'u': return C_PURPLE;
         default: return C_BG;
     }
 }
+
+// The menu renders on its own finer-grained canvas (6 px cells instead of
+// 8), centred and inset so the panel's rounded corners cut nothing off.
+#define MENU_SCALE 6
+#define MENU_W (VIEW_W / MENU_SCALE)
+#define MENU_H (VIEW_H / MENU_SCALE)
+static uint8_t s_menu[MENU_W * MENU_H];
 
 static void stampf(int x0, int y0, const char *const *rows, int nrows, bool flip)
 {
@@ -139,8 +155,7 @@ static const char *const ZED[] = {
     "zzz",
 };
 
-// World objects: the food bowl (salmon inside), the yarn ball, a poop, and
-// the little puff left behind when one is cleaned.
+// World objects: the food bowl (salmon inside) and the yarn ball.
 static const char *const BOWL[] = {
     ".#pppp#.",
     "#ssssss#",
@@ -155,19 +170,6 @@ static const char *const BALL[] = {
     "#rrpr#",
     "#prpr#",
     ".####.",
-};
-
-static const char *const POOP_ART[] = {
-    "..b...",
-    ".bbb..",
-    ".bbbb.",
-    "bbbbbb",
-};
-
-static const char *const POOF[] = {
-    "W.W.W",
-    ".W.W.",
-    "W.W.W",
 };
 
 // HUD icons: yarn ball (play), fish (food), heart (affection), dumbbell
@@ -211,13 +213,23 @@ static const char *const ICON_EXER[] = {
     ".oo...oo.",
 };
 
-static const char *const ICON_MOON[] = {
-    "..yyyy.",
-    ".yy...W",
-    "yy.....",
-    "yy.....",
-    ".yy....",
-    "..yyyy.",
+static const char *const ICON_SLEEP[] = {
+    "uuuuuu",
+    "....uu",
+    "...uu.",
+    "..uu..",
+    ".uu...",
+    "uuuuuu",
+};
+
+// The menu's battery row icon: a solid block with its terminal nub.
+static const char *const ICON_BATT[] = {
+    "ggggggggg.",
+    "ggggggggg.",
+    "gggggggggg",
+    "gggggggggg",
+    "ggggggggg.",
+    "ggggggggg.",
 };
 
 // Small overlay sprites are stamped unflipped with their own widths.
@@ -355,17 +367,15 @@ static struct {
     bool ball_alive;
     float ball_x, ball_vx;
     float play_left;     // seconds remaining in the play session
-    float poop_x[3];
-    bool poop_live[3];
     float food_spot;     // where food last appeared; a hungry cat lingers
     bool food_spot_set;
-    float poof_x, poof_t;
     float notice;        // reaction delay before he heads for a new drop
     int goal_kind;       // 0 none, 1 bowl, 2 ball
     float goal_stop;     // world x he trots toward
-    bool eat_evt, play_evt, clean_evt;
+    bool eat_evt, play_evt;
     int st_f, st_a, st_x, st_p, st_s;  // gauge values pushed in by main
     int streaks[5];                    // play, food, love, exercise, sleep
+    int hits[5];                       // gauge reached full today
 
     // Camera and trust (Phase 3). Normally the camera is pinned to the cat;
     // absence, fleeing and hiding set it free.
@@ -662,7 +672,7 @@ static bool palette_ungraded(int idx)
 {
     return idx == C_BATT_G || idx == C_BATT_Y || idx == C_BATT_R ||
            idx == C_BATT_B || idx == C_BLACK || idx == C_WHITE ||
-           idx == C_UI_DIM || idx == C_ORANGE;
+           idx == C_UI_DIM || idx == C_ORANGE || idx == C_PURPLE;
 }
 
 void cat_init(void)
@@ -779,29 +789,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         tap_claimed = true;
     }
 
-    // A tap on a poop cleans it: puff, swipe sound, one less indignity.
-    if (released_tap && !tap_claimed) {
-        for (int i = 0; i < 3; i++) {
-            if (!s.poop_live[i]) {
-                continue;
-            }
-            const float cxp = CENTRE + world_delta(s.world_x, s.poop_x[i]) /
-                                           PIX_SCALE;
-            if (s.last_x >= cxp - 5.0f && s.last_x <= cxp + 5.0f &&
-                s.last_y > FLOOR_Y - 10.0f) {
-                s.poop_live[i] = false;
-                s.clean_evt = true;
-                s.swipe = true;
-                s.poof_x = s.poop_x[i];
-                s.poof_t = 0.5f;
-                tap_claimed = true;
-                break;
-            }
-        }
-    }
-
     // While the park is empty, any tap calls him in; while he hides, a tap
-    // on him (once found) brings him out — wary.
+    // on him (once found, mid-stride) brings him out — wary.
     if (released_tap && !tap_claimed) {
         if (s.mode == M_ABSENT) {
             s.summon_evt = true;
@@ -1229,9 +1218,6 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             }
         }
     }
-    if (s.poof_t > 0.0f) {
-        s.poof_t -= dt;
-    }
 
     // --- purr chases petting ---
     float target = 0.0f;
@@ -1392,33 +1378,12 @@ void cat_set_stats(int food, int affection, int exercise, int play,
     s.st_s = sleep_v;
 }
 
-void cat_set_streaks(const int streaks[5])
+void cat_set_streaks(const int streaks[5], const int hits[5])
 {
     for (int i = 0; i < 5; i++) {
         s.streaks[i] = streaks[i];
+        s.hits[i] = hits[i];
     }
-}
-
-void cat_spawn_poop(void)
-{
-    for (int i = 0; i < 3; i++) {
-        if (!s.poop_live[i]) {
-            const float sign = (frand01() < 0.5f) ? -1.0f : 1.0f;
-            s.poop_x[i] = wrapf(s.world_x + sign *
-                                (150.0f + frand01() * 750.0f));
-            s.poop_live[i] = true;
-            return;
-        }
-    }
-}
-
-int cat_poop_count(void)
-{
-    int n = 0;
-    for (int i = 0; i < 3; i++) {
-        n += s.poop_live[i] ? 1 : 0;
-    }
-    return n;
 }
 
 bool cat_take_eat(void)
@@ -1432,13 +1397,6 @@ bool cat_take_play_hit(void)
 {
     const bool v = s.play_evt;
     s.play_evt = false;
-    return v;
-}
-
-bool cat_take_poop_clean(void)
-{
-    const bool v = s.clean_evt;
-    s.clean_evt = false;
     return v;
 }
 
@@ -1550,6 +1508,11 @@ float cat_debug_world(void)
     return s.world_x;
 }
 
+float cat_debug_cam(void)
+{
+    return s.cam_x;
+}
+
 void cat_debug_force(int mode)
 {
     // 50+: scene setups for the host preview (harmless on hardware).
@@ -1557,9 +1520,6 @@ void cat_debug_force(int mode)
         drop_bowl();
     } else if (mode == 51) {
         drop_ball();
-    } else if (mode == 52) {
-        s.poop_x[0] = wrapf(s.world_x - 5.0f * PIX_SCALE);
-        s.poop_live[0] = true;
     } else if (mode == 53) {
         s.status_screen = true;
     } else if (mode == 60) {
@@ -1607,18 +1567,13 @@ static void stamp_gauge(int x0, int y0, const char *const *rows, int nrows,
 
 static void compose(void)
 {
+    s_surf = s_canvas;
+    s_surf_w = CANVAS_W;
+    s_surf_h = CANVAS_H;
     // Index 0 = transparent: the painted scene shows through.
     memset(s_canvas, 0, sizeof(s_canvas));
 
     // World objects sit on the path, behind the cat.
-    for (int i = 0; i < 3; i++) {
-        if (s.poop_live[i]) {
-            const int cx = obj_canvas_x(s.poop_x[i]);
-            if (cx > -6 && cx < CANVAS_W + 6) {
-                stamp_fx(cx - 3, FLOOR_Y - 3, POOP_ART, 4);
-            }
-        }
-    }
     if (s.bowl_alive) {
         const int cx = obj_canvas_x(s.bowl_x);
         if (cx > -8 && cx < CANVAS_W + 8) {
@@ -1630,10 +1585,6 @@ static void compose(void)
         if (cx > -6 && cx < CANVAS_W + 6) {
             stamp_fx(cx - 3, FLOOR_Y - 5, BALL, 6);
         }
-    }
-    if (s.poof_t > 0.0f) {
-        const int cx = obj_canvas_x(s.poof_x);
-        stamp_fx(cx - 2, FLOOR_Y - 6, POOF, 3);
     }
 
     const anim_desc_t *a = &k_anim[s.mode];
@@ -1663,21 +1614,17 @@ static void compose(void)
     stamp_gauge(13, 2, ICON_FISH, 6, s.st_f);
     stamp_gauge(25, 2, ICON_HEART, 6, s.st_a);
     stamp_gauge(34, 2, ICON_EXER, 6, s.st_x);
-    stamp_gauge(45, 2, ICON_MOON, 6, s.st_s);
+    stamp_gauge(45, 2, ICON_SLEEP, 6, s.st_s);
 
-    // Battery: a hairline along the very top edge, its length the charge.
+    // Battery: a hairline along the top edge, inset clear of the panel's
+    // rounded corners. Charged length in green (blue on USB), the depleted
+    // remainder in red.
     if (s.batt_pct >= 0) {
-        uint8_t col = C_BATT_G;
-        if (s.batt_chg) {
-            col = C_BATT_B;
-        } else if (s.batt_pct <= 15) {
-            col = C_BATT_R;
-        } else if (s.batt_pct <= 40) {
-            col = C_BATT_Y;
-        }
-        const int fill = (s.batt_pct * CANVAS_W + 50) / 100;
-        for (int x = 0; x < fill; x++) {
-            px(x, 0, col);
+        const int x0 = 4, span = CANVAS_W - 8;
+        const int fill = (s.batt_pct * span + 50) / 100;
+        const uint8_t col = s.batt_chg ? C_BATT_B : C_BATT_G;
+        for (int x = 0; x < span; x++) {
+            px(x0 + x, 0, (x < fill) ? col : C_BATT_R);
         }
     }
 }
@@ -1693,9 +1640,10 @@ enum {
     GL_PCT = 10,
     GL_F, GL_A, GL_E, GL_X, GL_B, GL_P,
     GL_L, GL_Y, GL_D, GL_V, GL_R, GL_C, GL_I, GL_S,
+    GL_T, GL_CHK,
 };
 
-static const uint8_t k_font[25][5] = {
+static const uint8_t k_font[27][5] = {
     {7, 5, 5, 5, 7},  // 0 / O
     {2, 6, 2, 2, 7},  // 1
     {7, 1, 7, 4, 7},  // 2
@@ -1721,6 +1669,8 @@ static const uint8_t k_font[25][5] = {
     {7, 4, 4, 4, 7},  // C
     {7, 2, 2, 2, 7},  // I
     {7, 4, 7, 1, 7},  // S
+    {7, 2, 2, 2, 2},  // T
+    {1, 1, 5, 3, 2},  // checkmark
 };
 
 static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
@@ -1760,11 +1710,16 @@ static void draw_word(int x, int y, const uint8_t *glyphs, int n,
     }
 }
 
-// The menu (tap the heart, dumbbell or moon): each gauge with its word and
-// its streak — how many days in a row that gauge reached full.
+// The menu (tap the heart, dumbbell or Z): each gauge beside its word, a
+// check or cross for "done today", and the streak — which counts today the
+// moment its gauge reaches full. The battery sits in the list like any
+// other icon, with its percentage.
 static void compose_status(void)
 {
-    memset(s_canvas, C_BLACK, sizeof(s_canvas));
+    s_surf = s_menu;
+    s_surf_w = MENU_W;
+    s_surf_h = MENU_H;
+    memset(s_menu, C_BLACK, sizeof(s_menu));
 
     static const uint8_t W_PLAY[] = {GL_P, GL_L, GL_A, GL_Y};
     static const uint8_t W_FOOD[] = {GL_F, GL_O, GL_O, GL_D};
@@ -1772,6 +1727,7 @@ static void compose_status(void)
     static const uint8_t W_EXER[] = {GL_E, GL_X, GL_E, GL_R, GL_C, GL_I,
                                      GL_S, GL_E};
     static const uint8_t W_SLEEP[] = {GL_S, GL_L, GL_E, GL_E, GL_P};
+    static const uint8_t W_BATT[] = {GL_B, GL_A, GL_T, GL_T};
 
     const struct {
         const char *const *art;
@@ -1779,38 +1735,44 @@ static void compose_status(void)
         int wn;
         int val;
         int streak;
+        int hit;
     } rows[5] = {
-        {ICON_BALL, W_PLAY, 4, s.st_p, s.streaks[0]},
-        {ICON_FISH, W_FOOD, 4, s.st_f, s.streaks[1]},
-        {ICON_HEART, W_LOVE, 4, s.st_a, s.streaks[2]},
-        {ICON_EXER, W_EXER, 8, s.st_x, s.streaks[3]},
-        {ICON_MOON, W_SLEEP, 5, s.st_s, s.streaks[4]},
+        {ICON_BALL, W_PLAY, 4, s.st_p, s.streaks[0], s.hits[0]},
+        {ICON_FISH, W_FOOD, 4, s.st_f, s.streaks[1], s.hits[1]},
+        {ICON_HEART, W_LOVE, 4, s.st_a, s.streaks[2], s.hits[2]},
+        {ICON_EXER, W_EXER, 8, s.st_x, s.streaks[3], s.hits[3]},
+        {ICON_SLEEP, W_SLEEP, 5, s.st_s, s.streaks[4], s.hits[4]},
     };
 
     for (int i = 0; i < 5; i++) {
-        const int by = 1 + i * 8;
-        stamp_gauge(1, by, rows[i].art, 6, rows[i].val);
-        draw_word(13, by + 1, rows[i].word, rows[i].wn, C_WHITE);
-        // Streak, right-aligned as "NX" (days in a row at full).
-        int v = rows[i].streak;
+        const int by = 3 + i * 9;
+        stamp_gauge(10, by, rows[i].art, 6, rows[i].val);
+        draw_word(23, by + 1, rows[i].word, rows[i].wn, C_WHITE);
+        // Done today?
+        if (rows[i].hit) {
+            draw_glyph(55, by + 1, GL_CHK, C_BATT_G);
+        } else {
+            draw_glyph(55, by + 1, GL_X, C_UI_DIM);
+        }
+        // The streak counts today as soon as today is done.
+        int v = rows[i].streak + (rows[i].hit ? 1 : 0);
         if (v > 99) {
             v = 99;
         }
+        const uint8_t col = rows[i].hit ? C_WHITE : C_UI_DIM;
         const int digits = (v >= 10) ? 2 : 1;
-        const int sx = CANVAS_W - 3 - digits * 4;
-        const int nx = draw_number(sx, by + 1, v, C_UI_DIM);
-        draw_glyph(nx, by + 1, GL_X, C_UI_DIM);
+        const int nx = draw_number(68 - digits * 4, by + 1, v, col);
+        draw_glyph(nx, by + 1, GL_X, col);
     }
 
-    // Bottom line: battery left, poops right.
-    const int by = 40;
-    draw_glyph(1, by, GL_B, C_WHITE);
+    // Battery, one of the icons now: a gauge of charge plus its number.
+    const int by = 3 + 5 * 9;
+    stamp_gauge(10, by, ICON_BATT, 6, (s.batt_pct >= 0) ? s.batt_pct : 0);
+    draw_word(23, by + 1, W_BATT, 4, C_WHITE);
     if (s.batt_pct >= 0) {
-        const int nx = draw_number(6, by, s.batt_pct, C_WHITE);
-        draw_glyph(nx, by, GL_PCT, C_WHITE);
+        const int nx = draw_number(55, by + 1, s.batt_pct, C_WHITE);
+        draw_glyph(nx, by + 1, GL_PCT, C_WHITE);
     }
-    draw_glyph(38, by, GL_P, C_WHITE);
-    draw_number(43, by, cat_poop_count(), C_WHITE);
 }
 
 static int s_flush_errors;
@@ -1839,6 +1801,23 @@ void cat_render(void)
 
         for (int row = 0; row < BAND_ROWS; row++) {
             uint16_t *out = buf + row * LCD_H_RES;
+
+            if (s.status_screen) {
+                // The menu: finer 6 px cells on black, no world behind.
+                const int lx_cell = (y0 + row) / MENU_SCALE;
+                const uint16_t *pal = s_pal565[BG_DAY];
+                const uint16_t black = pal[C_BLACK];
+                for (int p = 0; p < LCD_H_RES; p++) {
+                    const int ly_cell = (LCD_H_RES - 1 - p) / MENU_SCALE;
+                    uint8_t ci = C_BLACK;
+                    if (lx_cell < MENU_W && ly_cell < MENU_H) {
+                        ci = s_menu[ly_cell * MENU_W + lx_cell];
+                    }
+                    out[p] = ci ? pal[ci] : black;
+                }
+                continue;
+            }
+
             // Each panel row is one pre-rotated world-column strip.
             const int wx = ((scroll + y0 + row) % BG_WORLD_W + BG_WORLD_W) % BG_WORLD_W;
             memcpy(out, world[wx], LCD_H_RES * sizeof(uint16_t));
@@ -1847,8 +1826,7 @@ void cat_render(void)
             // fixes the logical x cell; walking panel columns descends the
             // logical y cells (panel x = 367 maps to logical y = 0).
             const int lx_cell = (y0 + row) / PIX_SCALE;
-            const uint16_t *pal =
-                s_pal565[s.status_screen ? BG_DAY : s.daypart];
+            const uint16_t *pal = s_pal565[s.daypart];
             for (int pxb = 0; pxb < LCD_H_RES / PIX_SCALE; pxb++) {
                 const int ly_cell = (LCD_H_RES / PIX_SCALE - 1) - pxb;
                 const uint8_t ci = s_canvas[ly_cell * CANVAS_W + lx_cell];

@@ -577,12 +577,12 @@ void cat_set_stats(int food, int affection, int exercise, int play,
 {
     (void)food; (void)affection; (void)exercise; (void)play; (void)sleep_v;
 }
-void cat_set_streaks(const int streaks[5]) { (void)streaks; }
-void cat_spawn_poop(void) {}
-int cat_poop_count(void) { return 0; }
+void cat_set_streaks(const int streaks[5], const int hits[5])
+{
+    (void)streaks; (void)hits;
+}
 bool cat_take_eat(void) { return false; }
 bool cat_take_play_hit(void) { return false; }
-bool cat_take_poop_clean(void) { return false; }
 bool cat_take_summon(void) { return false; }
 bool cat_take_reconcile(void) { return false; }
 void cat_hear_sound(void) {}
@@ -593,6 +593,7 @@ void cat_restore_trust(int scare_level, bool wary)
     (void)scare_level; (void)wary;
 }
 float cat_debug_world(void) { return 0.0f; }
+float cat_debug_cam(void) { return 0.0f; }
 void cat_entice(int kind) { (void)kind; }
 void cat_entice_stop(void) {}
 void cat_set_battery(int percent, bool charging) { (void)percent; (void)charging; }

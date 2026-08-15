@@ -10,23 +10,24 @@ will eventually start meowing for you at the hours you taught him.
 
 ## The game
 
-Three stats (food, affection, exercise — every bar aspires to be full)
-simulate continuously, including through the hours the device sleeps, and
-read directly on him: a hungry cat lingers where food appears, an aloof cat
-wanders off and can't be bothered to glance at your tap, a devoted one
-rumbles harder and rains hearts. There is no energy stat — a filling
-exercise bar IS his tiredness: pleasantly worn out, slower, loafing longer,
-napping earlier, and fresh again when it resets with the new day. He washes
-up after every meal, as one does.
+Five gauges — play, food, love, exercise, sleep — paced to a ~5 minute care
+session: do everything positive once and every gauge fills; leave him be and
+they drain within minutes. His sleep gauge fills while HE naps, and a
+completed sleep rolls the episode — everything else resets to zero, fresh
+session on wake. The gauges read directly on him: a hungry cat lingers where
+food appears, an aloof cat wanders off and ignores your taps, a loved one
+rumbles harder and rains hearts, a well-exercised one runs a beat slower and
+naps sooner. He washes up after every meal, as one does. The menu (tap the
+heart, dumbbell or Z) shows every gauge with its word, a done-today check,
+and its streak of consecutive full days.
 
 **HUD** (tappable gauge-icons in the sky): every icon fills bottom-up with
 its stat — yarn ball with today's play, fish with food, a heart with
-affection, a dumbbell with exercise. Tapping the fish drops a bowl, the ball
-starts a 60 s play session (bat-and-chase, pounces — the only place his jump
-lives), the heart opens the status page. A full gauge refuses its tap: no
-dinner for a fed cat, no new ball once he's had his games (fresh again each
-day). Some hours after a meal, a poop appears somewhere in the walked world;
-it costs affection every hour until you tap it away.
+affection, a dumbbell with exercise, a purple Z with his sleep. Tapping the
+fish drops a bowl, the ball starts a 60 s play session (bat-and-chase,
+pounces — the only place his jump lives); heart, dumbbell or Z opens the
+menu. The battery is a hairline along the top edge, red where depleted. The fish refuses a tap when he is
+already fed, and yarn balls come one at a time — never while food is out.
 
 **The ear**: the mic listens (only while awake, gated during his own sounds)
 for any sharp sound above the room's ambient floor. After a wake the park is
@@ -58,8 +59,7 @@ bedroom. It is a cat.
 | Tap the cat | A glance and a tail flick (if he feels like it) |
 | Tap the fish | Bowl drops; he trots over and eats |
 | Tap the yarn ball | 60 s play session: bats, chases, pounces |
-| Tap the hearts | Full-screen status page |
-| Tap a poop | Cleaned (puff, swipe sound) |
+| Tap the heart, dumbbell or Z | The menu: gauges, words, streaks, battery |
 | Tilt 10–45% | Walks downhill |
 | Tilt past 45% | Bounds in chained leaps with directional whooshes |
 | Double-tap a screen edge | Leaps that way |

@@ -42,20 +42,12 @@
 #define AFFECT_SCARE_MAX 20.0f
 #define AFFECT_RECONCILE 4.0f
 
-// A meal shows up again as a poop 2-4 h later; each one left visible costs
-// affection while it sits — he has standards.
-#define POOP_MIN_S (2.0f * 3600.0f)
-#define POOP_SPAN_S (2.0f * 3600.0f)
-#define POOP_AFFECT_PER_S (0.5f / 3600.0f)
-
 // A gauge counts as "achieved" for the day's streak once it touches this.
 #define STREAK_FULL 99.5f
 
 static stats_t s_stats;
 static float s_pet_budget;  // vestigial: kept only for blob layout stability
 static int32_t s_day_serial;  // 0 = unknown
-static float s_poop_due_s;    // >0 counting down, 0 none, -1 ready to spawn
-static int s_poop_count;
 static int s_trust_level;
 static bool s_trust_wary;
 static uint8_t s_streak[ST_COUNT];
@@ -107,8 +99,6 @@ void stats_reset(void)
     s_stats.sleep = 50.0f;
     s_pet_budget = 0.0f;
     s_day_serial = 0;
-    s_poop_due_s = 0.0f;
-    s_poop_count = 0;
     for (int i = 0; i < ST_COUNT; i++) {
         s_streak[i] = 0;
         s_hit_today[i] = 0;
@@ -149,8 +139,7 @@ void stats_tick(float dt, bool asleep, float purr)
     }
 
     s_stats.food -= dt * FOOD_DECAY_PER_S;
-    s_stats.affection -=
-        dt * (LOVE_DECAY_PER_S + (float)s_poop_count * POOP_AFFECT_PER_S);
+    s_stats.affection -= dt * LOVE_DECAY_PER_S;
     const float xp = asleep ? ASLEEP_XP_FACTOR : 1.0f;
     s_stats.exercise -= dt * EXER_DECAY_PER_S * xp;
     s_stats.play -= dt * PLAY_DECAY_PER_S * xp;
@@ -166,13 +155,6 @@ void stats_tick(float dt, bool asleep, float purr)
         s_stats.sleep -= dt * SLEEP_DECAY_PER_S;
         if (purr > PET_PURR_MIN) {
             s_stats.affection += dt * PET_FILL_PER_S;
-        }
-    }
-
-    if (s_poop_due_s > 0.0f) {
-        s_poop_due_s -= dt;
-        if (s_poop_due_s <= 0.0f) {
-            s_poop_due_s = -1.0f;  // ready: the engine will place it
         }
     }
 
@@ -235,30 +217,9 @@ int stats_streak(int item)
     return (item >= 0 && item < ST_COUNT) ? s_streak[item] : 0;
 }
 
-void stats_note_fed(void)
+int stats_hit_today(int item)
 {
-    if (s_poop_due_s == 0.0f) {
-        s_poop_due_s = POOP_MIN_S + srand01() * POOP_SPAN_S;
-    }
-}
-
-bool stats_take_poop_ready(void)
-{
-    if (s_poop_due_s < 0.0f) {
-        s_poop_due_s = 0.0f;
-        return true;
-    }
-    return false;
-}
-
-void stats_set_poop_count(int n)
-{
-    s_poop_count = (n < 0) ? 0 : n;
-}
-
-int stats_poop_count(void)
-{
-    return s_poop_count;
+    return (item >= 0 && item < ST_COUNT) ? s_hit_today[item] : 0;
 }
 
 void stats_note_date(int32_t day_serial)
@@ -319,13 +280,6 @@ void stats_offline(double seconds)
     if (sec >= to_full) {
         s_hit_today[ST_SLEEP] = 1;
         sleep_completes();
-    }
-
-    if (s_poop_due_s > 0.0f) {
-        s_poop_due_s -= sec * 0.25f;
-        if (s_poop_due_s <= 0.0f) {
-            s_poop_due_s = -1.0f;
-        }
     }
 }
 
@@ -522,9 +476,6 @@ bool stats_store_load(void)
     s_stats.sleep = clamp01_100(b.sleep);
     s_day_serial = b.day_serial;
     s_loaded_epoch = b.saved_epoch;
-    s_poop_due_s = b.poop_due_s;
-    s_poop_count = (b.poop_count < 0) ? 0 : (b.poop_count > 3) ? 3
-                                                               : b.poop_count;
     s_trust_level = (b.trust_level < 0) ? 0 : (b.trust_level > 4)
                                                   ? 4
                                                   : b.trust_level;
@@ -559,8 +510,8 @@ void stats_store_save(void)
         .pet_budget = 0.0f,
         .saved_epoch = clock_valid() ? (int64_t)time(NULL) : 0,
         .day_serial = s_day_serial,
-        .poop_due_s = s_poop_due_s,
-        .poop_count = s_poop_count,
+        .poop_due_s = 0.0f,   // poop retired; fields kept for blob layout
+        .poop_count = 0,
         .trust_level = s_trust_level,
         .trust_wary = s_trust_wary ? 1 : 0,
     };

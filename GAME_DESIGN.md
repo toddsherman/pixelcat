@@ -15,7 +15,7 @@ minutes. Every bar aspires to be full.
 |---|---|---|
 | Play | yarn-ball sessions (bats and pounces) | drains in ~5 min; faster while he sleeps |
 | Food | eating (a bowl is a full meal) | drains in ~6 min; play works up an appetite |
-| Love | petting (one gauge row per 5 s of purring), play, making peace | drains in ~5 min; visible poop; **being scared (shake)** |
+| Love | petting (one gauge row per 5 s of purring), play, making peace | drains in ~5 min; **being scared (shake)** |
 | Exercise | **walking and dashing only** — never scares, never pounces | drains in ~5 min; faster while he sleeps |
 | Sleep | fills while HE sleeps (~75 s nap fills it) | drains in ~6 min awake |
 
@@ -31,9 +31,10 @@ Four always-visible icons in the sky — world objects are touchable, and so
 is the HUD. No navigation state, no open/close.
 
 - **One row**: yarn ball (Play), fish (Food), heart (Love), dumbbell
-  (Exercise), moon (Sleep) — all 6 cells tall, each a single colour with
-  white as the only accent, no outlines. **Battery is a one-pixel hairline
-  along the very top edge**, its length the charge.
+  (Exercise), purple Z (Sleep) — all 6 cells tall, each a single colour
+  with white as the only accent, no outlines. **Battery is a one-pixel
+  hairline along the top edge**, inset clear of the rounded corners:
+  charged length in green (blue on USB), the depleted remainder in red.
 - **Every icon is a vertical gauge**: grey art that fills bottom-up with
   its colour — the fill IS the reading.
   - **Fish** → tap drops a bowl; he trots over, eats, and washes his paw
@@ -42,21 +43,17 @@ is the HUD. No navigation state, no open/close.
   - **Yarn ball** → tap starts a 60 s play session (paw-batting and
     pounces — the only place those animations live). Yarn balls can keep
     coming, but **only one at a time and never while food is out**.
-  - **Heart, dumbbell, moon** → any of them opens the **menu screen**:
-    each gauge with its word (PLAY / FOOD / LOVE / EXERCISE / SLEEP) and
-    its streak — how many days in a row that gauge reached full — plus
-    battery % and the poop count. Tap to exit.
+  - **Heart, dumbbell, Z** → any of them opens the **menu screen**,
+    rendered in finer pixels and inset clear of the panel's rounded
+    corners: each gauge beside its blocky word (PLAY / FOOD / LOVE /
+    EXERCISE / SLEEP), a checkmark or cross for "reached full today", and
+    the streak — which counts today the moment the check lands (0X becomes
+    1X; tomorrow makes it 2X). The battery sits in the list like any other
+    icon with its percentage. Tap to exit.
 - Icon hit-boxes take priority over the side-zone leap taps (same precedence
   the battery tap uses today).
 - **Buttons** do exactly one thing: wake the device. PWR's 6-second hardware
   power-off is untouchable. Shortcuts can be added later if a need emerges.
-
-## Poop
-
-Some hours after eating, one appears somewhere in the walked world and simply
-sits there. Tap to clean (poof + swipe sound). Each visible poop costs a
-little affection per hour — he has standards. New art: one small sprite
-(ASCII, in-repo).
 
 ## The microphone, absence, and hiding
 

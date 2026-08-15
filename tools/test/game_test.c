@@ -86,7 +86,6 @@ static void drain_events(void)
     cat_take_dash();
     cat_take_eat();
     cat_take_play_hit();
-    cat_take_poop_clean();
     cat_take_walked();
 }
 
@@ -190,14 +189,6 @@ int main(void)
     expect(hits_food_out == 0, "no yarn ball while food is out");
     expect(ate_anyway == 1, "dinner proceeds undisturbed");
 
-    // --- Poop: tap cleans it ---
-    fresh_present_cat();
-    cat_debug_force(52);  // poop 5 cells left of him
-    expect(cat_poop_count() == 1, "debug poop spawned");
-    tap(CELL(14), CELL(40));
-    expect(cat_take_poop_clean(), "tap on the poop cleans it");
-    expect(cat_poop_count() == 0, "count back to zero");
-
     // --- Status page: hearts tap opens, next tap closes ---
     fresh_present_cat();
     tap(CELL(25), CELL(4));  // hearts zone
@@ -286,13 +277,13 @@ int main(void)
     }
     expect(cat_scare_level() == 2, "scaring a hiding cat escalates");
 
-    // --- Search: swipe pans the camera; a tap on him brings him out wary ---
+    // --- Search: swipe pans the camera; he keeps walking away while in
+    // view, so the tap has to land on him mid-stride ---
     fresh_present_cat();
     scare();
     drain_events();
-    // Pan with long drags until he is on screen (near the centre), then tap.
     int found = 0;
-    for (int swipes = 0; swipes < 60 && !found; swipes++) {
+    for (int swipes = 0; swipes < 80 && !found; swipes++) {
         // Drag high across the sky, well clear of the cat's petting box.
         cat_touch_t t = {.down = true, .x = CELL(46), .y = CELL(10)};
         cat_update(DT, &t, 0.0f, 0.0f);
@@ -302,16 +293,22 @@ int main(void)
         }
         t.down = false;
         cat_update(DT, &t, 0.0f, 0.0f);
-        // Probe: does a tap at centre reach him now?
-        tap(CELL(28), CELL(38));
-        for (int i = 0; i < 5; i++) {
-            idle_frames(1);
-        }
-        if (cat_state() == CAT_IDLE) {
-            found = 1;
+        // If he is in view, tap him where he actually is (he is moving).
+        float d = cat_debug_world() - cat_debug_cam();
+        if (d > (float)BG_WORLD_W * 0.5f) d -= (float)BG_WORLD_W;
+        if (d < -(float)BG_WORLD_W * 0.5f) d += (float)BG_WORLD_W;
+        if (d > -22.0f * PIX_SCALE && d < 22.0f * PIX_SCALE) {
+            const int cx = 19 + (int)(d / PIX_SCALE) + 9;  // sprite middle
+            tap(CELL(cx), CELL(38));
+            for (int i = 0; i < (int)(3.0f / DT) && !found; i++) {
+                idle_frames(1);
+                if (cat_state() == CAT_IDLE) {
+                    found = 1;
+                }
+            }
         }
     }
-    expect(found, "swipe search finds him; a tap brings him back");
+    expect(found, "swipe search finds the walking cat; a tap catches him");
     expect(cat_wary(), "he came out wary, not forgiven");
     expect(cat_scare_level() == 1, "a plain tap does not reset the score");
 

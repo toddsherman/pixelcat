@@ -332,24 +332,34 @@ static void cat_task(void *arg)
         }
         if (cat_take_eat()) {
             stats_on_eat(100.0f);  // a bowl is a full meal
-            stats_note_fed();
             stats_store_save();
         }
         if (cat_take_play_hit()) {
             stats_on_play_hit();
         }
-        if (cat_take_poop_clean()) {
-            stats_set_poop_count(cat_poop_count());
-            stats_store_save();
-        }
-        if (stats_take_poop_ready()) {
-            cat_spawn_poop();
-            stats_set_poop_count(cat_poop_count());
-        }
 
         if (stats_catchup_done() && now - last_save_us > 300 * 1000000LL) {
             last_save_us = now;
             stats_store_save();
+        }
+
+        // Gauges refresh every frame so each pixel row lights the moment
+        // its threshold crosses, never two at once.
+        {
+            const stats_t *sv = stats_get();
+            cat_set_stats((int)sv->food, (int)sv->affection,
+                          (int)sv->exercise, (int)sv->play, (int)sv->sleep);
+            const int streaks[5] = {
+                stats_streak(ST_PLAY), stats_streak(ST_FOOD),
+                stats_streak(ST_LOVE), stats_streak(ST_EXER),
+                stats_streak(ST_SLEEP),
+            };
+            const int hits[5] = {
+                stats_hit_today(ST_PLAY), stats_hit_today(ST_FOOD),
+                stats_hit_today(ST_LOVE), stats_hit_today(ST_EXER),
+                stats_hit_today(ST_SLEEP),
+            };
+            cat_set_streaks(streaks, hits);
         }
 
         cat_render();
@@ -361,15 +371,6 @@ static void cat_task(void *arg)
             if (battery_read(&pct, &chg)) {
                 cat_set_battery(pct, chg);
             }
-            const stats_t *sv = stats_get();
-            cat_set_stats((int)sv->food, (int)sv->affection,
-                          (int)sv->exercise, (int)sv->play, (int)sv->sleep);
-            const int streaks[5] = {
-                stats_streak(ST_PLAY), stats_streak(ST_FOOD),
-                stats_streak(ST_LOVE), stats_streak(ST_EXER),
-                stats_streak(ST_SLEEP),
-            };
-            cat_set_streaks(streaks);
             stats_set_trust(cat_scare_level(), cat_wary());
 
             // Half-hour bucket bookkeeping, once the clock is trustworthy.
@@ -499,12 +500,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(750));
 
     cat_init();
-    // Any poops he left before the reboot come back, freshly placed, and
-    // unreconciled fear survives the night.
-    for (int i = stats_poop_count(); i > 0; i--) {
-        cat_spawn_poop();
-    }
-    stats_set_poop_count(cat_poop_count());
+    // Unreconciled fear survives the night.
     cat_restore_trust(stats_trust_level(), stats_trust_wary());
     power_note_activity();
 
