@@ -581,6 +581,14 @@ int cat_button_pwr(void) { return -1; }
 int cat_button_boot(void) { return -1; }
 bool cat_test_is_open(void) { return false; }
 void cat_test_close(void) {}
+int cat_icon_fill(void) { return -1; }
+void cat_set_model_info(int sessions, int days, bool mature, int thresh_pct,
+                        int hits, int misses, const char *best_act,
+                        int peak_min)
+{
+    (void)sessions; (void)days; (void)mature; (void)thresh_pct;
+    (void)hits; (void)misses; (void)best_act; (void)peak_min;
+}
 void cat_set_debug_lines(const char *a, const char *b) { (void)a; (void)b; }
 void cat_set_streaks(const int streaks[5], const int hits[5])
 {

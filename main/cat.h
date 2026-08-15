@@ -95,31 +95,35 @@ cat_state_t cat_state(void);
 // Cumulative count of failed band flushes, for diagnostics.
 int cat_flush_errors(void);
 
-// The button-driven test menu: PWR opens and steps, BOOT chooses. Items
-// the engine cannot perform itself (gauges, auditions, sleep) come back as
-// a TEST_* code for main to carry out.
+// The button-driven test bench: PWR steps, BOOT picks. It is a handful of
+// small screens — the main list, an animation browser, an icon browser, a
+// behaviours list and a page about what the model has learned — and the
+// engine owns all of them. Only the things it cannot do itself come back
+// as an action for main.
 enum {
-    TEST_DAYPART = 0,  // force a time of day, to check the park's art
-    TEST_WEATHER,      // reserved: lights up when weather exists
-    TEST_ANIM,         // browse every animation, playing in the park
-    TEST_FILL, TEST_EMPTY, TEST_SCARE, TEST_SUMMON, TEST_AUDITION,
-    TEST_SLEEP,
-    TEST_FORGET,     // wipe what he has learned (asks twice)
-    TEST_EXIT_MENU,  // put the menu away; anything forced stays forced
-    TEST_EXIT_TEST,  // and this hands everything back to the clock
-    TEST_COUNT,
+    ACT_NONE = -1,
+    ACT_AUDITION = 0,  // fire a proactive audition now
+    ACT_SLEEP,         // drop into light sleep
+    ACT_FORGET,        // erase everything the model has learned
+    ACT_GAUGES,        // set every gauge to cat_icon_fill()
 };
 
-// The two buttons, handed straight to the engine: it owns the menu and the
-// animation browser and only hands back the actions it cannot perform
-// itself (gauges, auditions, sleep). -1 means nothing for main to do.
 int cat_button_pwr(void);
 int cat_button_boot(void);
 bool cat_test_is_open(void);
 void cat_test_close(void);
 
+// 0..100 while the icon browser is up, else -1.
+int cat_icon_fill(void);
+
 // Two short lines of whatever is worth knowing, shown under the test menu.
 void cat_set_debug_lines(const char *a, const char *b);
+
+// What the model knows, for its page. peak_min is the time of day it most
+// expects company, or -1 if it has no opinion yet.
+void cat_set_model_info(int sessions, int days, bool mature, int thresh_pct,
+                        int hits, int misses, const char *best_act,
+                        int peak_min);
 
 // Preview-only: force an internal behaviour mode. Numbers are
 // implementation-specific; harmless on hardware.

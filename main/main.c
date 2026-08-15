@@ -210,50 +210,41 @@ static void cat_task(void *arg)
             ESP_LOGI(TAG, "PWR pressed");
         }
 
-        // Buttons drive the test menu: PWR opens it and steps through,
-        // BOOT chooses. Everything here was otherwise a rebuild away.
+        const bool user_act =
+            ts.down || shake > 0.8f || fabsf(tilt) > 2.0f || button_press;
+
+        // The buttons belong to the test bench: PWR steps, BOOT picks.
         if (button_press) {
             cat_button_pwr();
         }
         if (boot_press) {
             switch (cat_button_boot()) {
-                case TEST_FILL:
-                    stats_debug_set(100.0f);
-                    cat_test_close();
-                    break;
-                case TEST_EMPTY:
-                    stats_debug_set(0.0f);
-                    cat_test_close();
-                    break;
-                case TEST_AUDITION: {
+                case ACT_AUDITION: {
                     struct tm lt;
                     const int mins =
                         wall_clock(&lt) ? lt.tm_hour * 60 + lt.tm_min : 12 * 60;
                     audition_start(ENTICE_MEOW, model_period(mins), now);
-                    cat_test_close();
                     break;
                 }
-                case TEST_SLEEP:
-                    cat_test_close();
+                case ACT_SLEEP:
                     power_sleep_now();
                     break;
-                case TEST_FORGET:
+                case ACT_FORGET:
                     model_forget();
                     logbook_forget();
                     cat_test_close();
                     break;
+                case ACT_GAUGES:
+                    stats_debug_set((float)cat_icon_fill());
+                    break;
                 default:
-                    break;  // the engine handled it
+                    break;
             }
         }
-        const bool user_act =
-            ts.down || shake > 0.8f || fabsf(tilt) > 2.0f || button_press;
-
-        if (ts.down || shake > 0.8f || button_press || boot_press ||
-            cat_test_is_open()) {
-            power_note_activity();
+        if (cat_icon_fill() >= 0 && button_press) {
+            // Stepping the icon browser sets the gauges it is showing.
+            stats_debug_set((float)cat_icon_fill());
         }
-        power_idle_check();
 
         // --- schedule model: he watches when you show up ---
         if (user_act && s_cur_half != 0) {
@@ -433,6 +424,40 @@ static void cat_task(void *arg)
                 cat_set_battery(pct, chg);
             }
             stats_set_trust(cat_scare_level(), cat_wary());
+
+            // What the model knows, for its page: the hour it most expects
+            // company, and which opening act has been working.
+            {
+                int peak = -1;
+                float best_p = 0.0f;
+                struct tm lt;
+                const int dow = wall_clock(&lt) ? lt.tm_wday : 1;
+                for (int b = 0; b < 48; b++) {
+                    const float p = model_bucket_p(model_bucket(dow, b * 30));
+                    if (p > best_p) {
+                        best_p = p;
+                        peak = b * 30;
+                    }
+                }
+                static const char *const acts[MODEL_ARMS] = {
+                    "JUMP", "PURR", "PAW", "PACE", "MEOW",
+                };
+                const int per = wall_clock(&lt)
+                                    ? model_period(lt.tm_hour * 60 + lt.tm_min)
+                                    : 0;
+                int best_arm = 0;
+                for (int a = 1; a < MODEL_ARMS; a++) {
+                    if (model_arm_value(per, a) > model_arm_value(per, best_arm)) {
+                        best_arm = a;
+                    }
+                }
+                int hits, misses;
+                model_wake_stats(&hits, &misses);
+                cat_set_model_info(model_sessions(), stats_streak(ST_SLEEP) + 1,
+                                   model_mature(),
+                                   (int)(model_threshold() * 100.0f), hits,
+                                   misses, acts[best_arm], peak);
+            }
 
             // Two lines of context under the test menu.
             {

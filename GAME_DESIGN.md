@@ -52,25 +52,27 @@ is the HUD. No navigation state, no open/close.
     icon with its percentage. Tap to exit.
 - Icon hit-boxes take priority over the side-zone leap taps (same precedence
   the battery tap uses today).
-- **Buttons** drive the **test menu** — waking the device is still what they
-  do first, but a need emerged. PWR opens the menu and steps through it;
-  BOOT chooses; EXIT returns to normal play.
-  - **Daypart** — force any time of day, so the park's art can be checked
-    without waiting for dusk. It sticks until the next reboot.
+- **Buttons** drive the **test bench** — waking the device is still what
+  they do first, but a need emerged. PWR steps, BOOT picks, and it is a
+  handful of small screens rather than one long list:
+  - **Daypart** — DEFAULT leaves it to the clock; the rest force a time of
+    day so the park's art can be checked without waiting for dusk.
   - **Weather** — a slot held open until weather exists.
   - **Animations** — browse every cycle, playing in the park with its name
-    on screen: PWR steps to the next, BOOT goes back to the menu.
-  - Plus the gameplay testers: fill or empty every gauge, scare him, summon
-    or banish him, force a proactive audition, sleep now.
-  - **FORGET ALL** wipes what he has learned — the schedule map, the
-    bandit's opinions, the wake record and the event history — because a
-    week of development is not a life, and he should not learn to expect
-    you at the hours you happened to be debugging. It asks twice.
-  - Two ways out, because they mean different things: **EXIT MENU** puts
-    the menu away and leaves anything forced still forced (the point of
-    forcing a daypart is to walk around in it), while **EXIT TEST** hands
-    everything back to the world's own rules. A red FORCED flag in the
-    header says when the second one has something to undo.
+    where the HUD would be, and with its own sounds.
+  - **Icons** — every gauge on screen at once, filling a row per press, so
+    the icon art can be seen at each level. It sets the real gauges, which
+    is why there is no separate fill-and-empty.
+  - **Behaviours** — scare him, summon or banish him, force an audition,
+    sleep now.
+  - **AI model** — what he has learned in plain words: sessions and days,
+    whether he is still too green to wake you, the hour he most expects
+    company, his wake record, the bar he has set himself and which opening
+    act is working. **FORGET ALL** lives here, and asks twice: a week of
+    being developed on is not a life, and he should not learn to expect you
+    at the hours you happened to be debugging.
+  - Two ways out: **EXIT MENU** leaves anything forced still forced, while
+    **EXIT TEST** hands everything back to the clock.
 
 ## The microphone, absence, and hiding
 

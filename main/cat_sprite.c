@@ -318,6 +318,9 @@ static const struct {
 };
 #define ANIM_COUNT ((int)(sizeof(k_anims) / sizeof(k_anims[0])))
 
+// Which test screen is showing, if any.
+enum { TS_OFF = 0, TS_MAIN, TS_ANIM, TS_ICONS, TS_BEHAV, TS_MODEL };
+
 // A little text, drawn by the menus and the animation browser.
 static int draw_text(int x, int y, const char *str, uint8_t col);
 
@@ -402,11 +405,15 @@ static struct {
     int st_f, st_a, st_x, st_p, st_s;  // gauge values pushed in by main
     int streaks[5];                    // play, food, love, exercise, sleep
     int hits[5];                       // gauge reached full today
-    bool test_menu;                    // the button-driven test menu is up
+    int screen;                        // TS_*: which test screen is up
     int test_sel;
-    bool anim_browse;                  // watching a single cycle play
     int anim_sel;
+    int icon_fill;                     // 0..100 while browsing icons, else -1
+    int daypart_pick;                  // 0 = leave it to the clock
     int confirm_sel;                   // item waiting on a second press
+    int mi_sessions, mi_days, mi_thresh, mi_hits, mi_misses, mi_peak;
+    bool mi_mature;
+    char mi_best[12];
     bool daypart_forced;               // a forced daypart outranks the clock
     char dbg_line1[24], dbg_line2[24];
 
@@ -718,6 +725,9 @@ void cat_init(void)
     s.batt_pct = -1;
     s.st_f = s.st_a = s.st_x = s.st_p = s.st_s = 100;  // until main pushes
     s.confirm_sel = -1;
+    s.icon_fill = -1;
+    s.mi_peak = -1;
+    snprintf(s.mi_best, sizeof(s.mi_best), "-");
     s.rng = 0x9E3779B9;
     s.entice = -1;
     // Every boot is a wake: the park starts empty until something calls him.
@@ -770,7 +780,7 @@ static void frame_sounds(void)
             // A bat connects: score it and send the ball rolling, usually
             // forward, sometimes squirting back through his legs.
             s.swipe = true;
-            if (!s.anim_browse) {
+            if (s.screen != TS_ANIM) {
                 s.play_evt = true;
             }
             float dir = s.facing_left ? -1.0f : 1.0f;
@@ -786,7 +796,7 @@ static void frame_sounds(void)
 
 void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
-    if (s.anim_browse) {
+    if (s.screen == TS_ANIM) {
         // A cycle on display: it plays, and it sounds like itself.
         s.t += dt;
         frame_sounds();
@@ -860,8 +870,8 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
     const int side_of = (s.last_x < RUN_ZONE_L) ? -1 : (s.last_x > RUN_ZONE_R) ? 1 : 0;
     const bool tap_on_side = released_tap && !tap_on_cat && side_of != 0;
 
-    // The menus swallow all interaction; the test menu is button-driven.
-    if (s.test_menu) {
+    // The menus swallow all interaction; the bench is button-driven.
+    if (s.screen >= TS_MAIN) {
         s.purr = fmaxf(0.0f, s.purr - PET_RAMP_DOWN * dt);
         s.was_down = touch->down;
         return;
@@ -1617,8 +1627,22 @@ void cat_debug_force(int mode)
         drop_ball();
     } else if (mode == 53) {
         s.status_screen = true;
+    } else if (mode == 55) {
+        s.screen = TS_BEHAV;
+        s.test_sel = 1;
+        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
+        snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
+    } else if (mode == 56) {
+        s.screen = TS_MODEL;
+        s.test_sel = 0;
+        s.confirm_sel = 0;
+        s.mi_sessions = 7; s.mi_days = 1; s.mi_mature = false;
+        s.mi_thresh = 43; s.mi_hits = 3; s.mi_misses = 1; s.mi_peak = 1350;
+        snprintf(s.mi_best, sizeof(s.mi_best), "MEOW");
+        snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
+        snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
     } else if (mode == 54) {
-        s.test_menu = true;
+        s.screen = TS_MAIN;
         s.test_sel = 2;
         snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
         snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
@@ -1731,7 +1755,7 @@ static void compose(void)
         }
     }
 
-    if (s.anim_browse) {
+    if (s.screen == TS_ANIM) {
         // Its name where the HUD would be, with the way out beneath.
         draw_text(2, 1, k_anims[s.anim_sel].name, C_WHITE);
         draw_text(2, 7, "BOOT BACK", C_UI_DIM);
@@ -2012,64 +2036,128 @@ static void compose_status(void)
     }
 }
 
-static const char *const k_test_items[TEST_COUNT] = {
-    "DAYPART", "WEATHER", "ANIMATIONS", "FILL ALL", "EMPTY ALL",
-    "SCARE HIM", "SUMMON", "AUDITION", "SLEEP NOW", "FORGET ALL",
-    "EXIT MENU", "EXIT TEST",
+// ---------------------------------------------------------------------------
+// The test bench: a handful of small screens, PWR to step, BOOT to pick.
+// ---------------------------------------------------------------------------
+
+enum { M_ROW_DAYPART = 0, M_ROW_WEATHER, M_ROW_ANIM, M_ROW_ICONS,
+       M_ROW_BEHAV, M_ROW_MODEL, M_ROW_EXIT_MENU, M_ROW_EXIT_TEST,
+       M_ROW_COUNT };
+
+static const char *const k_main_items[M_ROW_COUNT] = {
+    "DAYPART", "WEATHER", "ANIMATIONS", "ICONS", "BEHAVIOURS",
+    "AI MODEL", "EXIT MENU", "EXIT TEST",
 };
 
+enum { B_SCARE = 0, B_SUMMON, B_AUDITION, B_SLEEP, B_BACK, B_COUNT };
+static const char *const k_behav_items[B_COUNT] = {
+    "SCARE HIM", "SUMMON", "AUDITION NOW", "SLEEP NOW", "BACK",
+};
 
-// Short enough to sit in the value column without running off the edge.
+enum { A_FORGET = 0, A_BACK, A_COUNT };
+static const char *const k_model_items[A_COUNT] = {"FORGET ALL", "BACK"};
+
+// Daypart pick 0 means "leave it to the clock".
 static const char *const k_daypart_names[BG_VARIANTS] = {
     "DAY", "DAWN", "DUSK", "TWILIGHT", "NIGHT",
 };
 
-static void compose_test(void)
+// A list with a cursor, spaced to whatever fits between the rule and the
+// footer — adding an item tightens the gaps instead of pushing the last one
+// off the bottom.
+static void draw_list(const char *const *items, int n, int sel, int confirm,
+                      int top)
+{
+    int pitch = ((MENU_H - 16) - top - SMALL_H) / (n > 1 ? n - 1 : 1);
+    if (pitch > 16) {
+        pitch = 16;  // short lists should not sprawl down the whole page
+    }
+    for (int i = 0; i < n; i++) {
+        const int y = top + i * pitch;
+        if (i == sel) {
+            small_glyph(8, y, glyph_of('>'), C_BATT_G);
+        }
+        small_text(18, y, items[i], (i == sel) ? C_WHITE : C_UI_DIM);
+        if (i == confirm) {
+            small_text(120, y, "SURE - PICK AGAIN", C_BATT_R);
+        }
+    }
+}
+
+static void menu_chrome(const char *title)
 {
     s_surf = s_menu;
     s_surf_w = MENU_W;
     s_surf_h = MENU_H;
     memset(s_menu, C_BLACK, sizeof(s_menu));
-
-    small_text(8, 6, "TEST MENU", C_BATT_Y);
+    small_text(8, 6, title, C_BATT_Y);
     if (s.daypart_forced) {
-        small_text(66, 6, "FORCED", C_BATT_R);
+        small_text(MENU_W - 150, 6, "FORCED", C_BATT_R);
     }
     small_text(MENU_W - 90, 6, s.dbg_line2, C_UI_DIM);
     for (int x = 8; x < MENU_W - 8; x++) {
         px(x, 18, C_UI_DIM);
     }
-
-    // Space the list to whatever fits between the rule and the footer, so
-    // adding an item never silently pushes the last one off the screen
-    // again — it just tightens the gaps.
-    const int top = 24;
-    const int pitch = ((MENU_H - 16) - top - SMALL_H) / (TEST_COUNT - 1);
-    for (int i = 0; i < TEST_COUNT; i++) {
-        const int y = top + i * pitch;
-        const bool on = (i == s.test_sel);
-        if (on) {
-            small_glyph(8, y, glyph_of('>'), C_BATT_G);
-        }
-        small_text(18, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
-        if (i == s.confirm_sel) {
-            small_text(110, y, "SURE - PICK AGAIN", C_BATT_R);
-        }
-    }
-
-    // What the three art rows are pointing at.
-    small_text(110, top, k_daypart_names[s.daypart],
-               s.daypart_forced ? C_BATT_Y : C_UI_DIM);
-    small_text(110, top + pitch, "NOT BUILT", C_UI_DIM);
-    small_text(110, top + 2 * pitch, k_anims[s.anim_sel].name, C_BATT_Y);
-
     small_text(8, MENU_H - 12, s.dbg_line1, C_UI_DIM);
     small_text(MENU_W - 110, MENU_H - 12, "PWR MOVE BOOT PICK", C_UI_DIM);
 }
 
-// Browsing animations: the menu steps aside so the cycle can be watched in
-// the park itself, with its name along the bottom. PWR walks the list, BOOT
-// returns to the menu.
+static void compose_test(void)
+{
+    switch (s.screen) {
+        case TS_BEHAV:
+            menu_chrome("BEHAVIOURS");
+            draw_list(k_behav_items, B_COUNT, s.test_sel, -1, 24);
+            return;
+
+        case TS_MODEL: {
+            menu_chrome("AI MODEL");
+            // What he has learned, in the plainest terms available.
+            char line[40];
+            snprintf(line, sizeof(line), "SESSIONS %d OVER %d DAYS",
+                     s.mi_sessions, s.mi_days);
+            small_text(18, 26, line, C_WHITE);
+            small_text(18, 38, s.mi_mature ? "MATURE - HE MAY WAKE YOU"
+                                           : "STILL LEARNING - NO WAKES YET",
+                       s.mi_mature ? C_BATT_G : C_UI_DIM);
+            if (s.mi_peak >= 0) {
+                snprintf(line, sizeof(line), "EXPECTS YOU AROUND %d:%02d",
+                         s.mi_peak / 60, s.mi_peak % 60);
+            } else {
+                snprintf(line, sizeof(line), "NO PATTERN YET");
+            }
+            small_text(18, 50, line, C_WHITE);
+            snprintf(line, sizeof(line), "WAKES %d HIT %d MISS",
+                     s.mi_hits, s.mi_misses);
+            small_text(18, 62, line, C_WHITE);
+            snprintf(line, sizeof(line), "BAR %d%% BEST %s", s.mi_thresh,
+                     s.mi_best);
+            small_text(18, 74, line, C_WHITE);
+            // The list sits under what it is talking about.
+            draw_list(k_model_items, A_COUNT, s.test_sel, s.confirm_sel, 96);
+            return;
+        }
+
+        case TS_ICONS:
+        case TS_ANIM:
+            return;  // these draw over the park, not on their own screen
+
+        default:
+            break;
+    }
+
+    menu_chrome("TEST MENU");
+    draw_list(k_main_items, M_ROW_COUNT, s.test_sel, -1, 24);
+
+    const int top = 24;
+    const int pitch = ((MENU_H - 16) - top - SMALL_H) / (M_ROW_COUNT - 1);
+    small_text(120, top, s.daypart_pick ? k_daypart_names[s.daypart_pick - 1]
+                                        : "DEFAULT",
+               s.daypart_pick ? C_BATT_Y : C_UI_DIM);
+    small_text(120, top + pitch, "NOT BUILT", C_UI_DIM);
+    small_text(120, top + 2 * pitch, k_anims[s.anim_sel].name, C_BATT_Y);
+}
+
 // The noise a cycle opens with, for the ones that have one.
 static void anim_voice(void)
 {
@@ -2081,6 +2169,8 @@ static void anim_voice(void)
     }
 }
 
+// Browsing animations: the menu steps aside so the cycle can be watched in
+// the park itself. PWR walks the list, BOOT returns to the menu.
 static void anim_show(void)
 {
     s.cam_free = false;
@@ -2098,101 +2188,184 @@ static void anim_show(void)
 
 bool cat_test_is_open(void)
 {
-    return s.test_menu || s.anim_browse;
+    return s.screen != TS_OFF;
 }
 
 void cat_test_close(void)
 {
-    s.test_menu = false;
-    s.anim_browse = false;
+    s.screen = TS_OFF;
+    s.icon_fill = -1;
+}
+
+static void to_main_screen(void)
+{
+    s.screen = TS_MAIN;
+    s.test_sel = 0;
+    s.confirm_sel = -1;
+    s.icon_fill = -1;
+}
+
+int cat_icon_fill(void)
+{
+    return (s.screen == TS_ICONS) ? s.icon_fill : -1;
 }
 
 int cat_button_pwr(void)
 {
-    if (s.anim_browse) {
-        s.anim_sel = (s.anim_sel + 1) % ANIM_COUNT;
-        anim_show();
-        return -1;
+    switch (s.screen) {
+        case TS_OFF:
+            to_main_screen();
+            s.status_screen = false;
+            return ACT_NONE;
+
+        case TS_ANIM:
+            s.anim_sel = (s.anim_sel + 1) % ANIM_COUNT;
+            anim_show();
+            return ACT_NONE;
+
+        case TS_ICONS:
+            // One gauge row per press, then back to empty.
+            s.icon_fill += 100 / STATS_GAUGE_ROWS + 1;
+            if (s.icon_fill > 100) {
+                s.icon_fill = 0;
+            }
+            return ACT_GAUGES;
+
+        case TS_BEHAV:
+            s.test_sel = (s.test_sel + 1) % B_COUNT;
+            return ACT_NONE;
+
+        case TS_MODEL:
+            s.test_sel = (s.test_sel + 1) % A_COUNT;
+            s.confirm_sel = -1;
+            return ACT_NONE;
+
+        default:
+            s.test_sel = (s.test_sel + 1) % M_ROW_COUNT;
+            s.confirm_sel = -1;
+            return ACT_NONE;
     }
-    if (!s.test_menu) {
-        s.test_menu = true;
-        s.test_sel = 0;
-        s.status_screen = false;
-        return -1;
-    }
-    s.test_sel = (s.test_sel + 1) % TEST_COUNT;
-    s.confirm_sel = -1;  // moving away withdraws the question
-    return -1;
 }
 
 int cat_button_boot(void)
 {
-    if (s.anim_browse) {
-        // Back to the menu, and back to living his life.
-        s.anim_browse = false;
-        s.test_menu = true;
-        to_passive();
-        return -1;
-    }
-    if (!s.test_menu) {
-        return -1;
-    }
-    const int item = s.test_sel;
+    switch (s.screen) {
+        case TS_OFF:
+            return ACT_NONE;
 
-    // Destructive things ask twice: the first press poses the question,
-    // a second on the same row answers it.
-    if (item == TEST_FORGET && s.confirm_sel != TEST_FORGET) {
-        s.confirm_sel = TEST_FORGET;
-        return -1;
-    }
-    s.confirm_sel = -1;
+        case TS_ANIM:
+            s.screen = TS_MAIN;
+            to_passive();
+            return ACT_NONE;
 
-    switch (item) {
-        case TEST_DAYPART:
-            s.daypart = (s.daypart + 1) % BG_VARIANTS;
-            s.daypart_forced = true;
+        case TS_ICONS:
+            s.screen = TS_MAIN;
+            s.icon_fill = -1;
+            return ACT_NONE;
+
+        case TS_BEHAV:
+            switch (s.test_sel) {
+                case B_SCARE:
+                    s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
+                    s.wary = true;
+                    cat_test_close();
+                    if (!s.cam_free) {
+                        enter(M_ANGRY);
+                        s.hiss = true;
+                    }
+                    return ACT_NONE;
+                case B_SUMMON:
+                    cat_test_close();
+                    if (s.mode == M_ABSENT) {
+                        s.summon_evt = true;
+                        begin_enter();
+                    } else {
+                        begin_absent();
+                    }
+                    return ACT_NONE;
+                case B_AUDITION:
+                    cat_test_close();
+                    return ACT_AUDITION;
+                case B_SLEEP:
+                    cat_test_close();
+                    return ACT_SLEEP;
+                default:
+                    to_main_screen();
+                    return ACT_NONE;
+            }
+
+        case TS_MODEL:
+            if (s.test_sel == A_FORGET) {
+                // Irreversible: ask twice.
+                if (s.confirm_sel != A_FORGET) {
+                    s.confirm_sel = A_FORGET;
+                    return ACT_NONE;
+                }
+                s.confirm_sel = -1;
+                return ACT_FORGET;
+            }
+            to_main_screen();
+            return ACT_NONE;
+
+        default:
             break;
-        case TEST_WEATHER:
+    }
+
+    switch (s.test_sel) {
+        case M_ROW_DAYPART:
+            // Round the dial: DEFAULT, then each variant, then back.
+            s.daypart_pick = (s.daypart_pick + 1) % (BG_VARIANTS + 1);
+            s.daypart_forced = s.daypart_pick != 0;
+            if (s.daypart_forced) {
+                s.daypart = s.daypart_pick - 1;
+            }
+            break;
+        case M_ROW_WEATHER:
             break;  // nothing to cycle until weather exists
-        case TEST_ANIM:
-            s.test_menu = false;
-            s.anim_browse = true;
+        case M_ROW_ANIM:
+            s.screen = TS_ANIM;
             anim_show();
             break;
-        case TEST_SCARE:
-            s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
-            s.wary = true;
-            s.test_menu = false;
-            if (!s.cam_free) {
-                enter(M_ANGRY);
-                s.hiss = true;
-            }
+        case M_ROW_ICONS:
+            s.screen = TS_ICONS;
+            s.icon_fill = 0;
+            return ACT_GAUGES;
+        case M_ROW_BEHAV:
+            s.screen = TS_BEHAV;
+            s.test_sel = 0;
             break;
-        case TEST_SUMMON:
-            s.test_menu = false;
-            if (s.mode == M_ABSENT) {
-                s.summon_evt = true;
-                begin_enter();
-            } else {
-                begin_absent();
-            }
+        case M_ROW_MODEL:
+            s.screen = TS_MODEL;
+            s.test_sel = 0;
+            s.confirm_sel = -1;
             break;
-        case TEST_EXIT_MENU:
-            // Out of the way, but a forced daypart keeps standing — that is
-            // the point of forcing one.
-            s.test_menu = false;
+        case M_ROW_EXIT_MENU:
+            cat_test_close();  // anything forced stays forced
             break;
-        case TEST_EXIT_TEST:
-            // Everything back to the world's own rules.
-            s.test_menu = false;
-            s.anim_browse = false;
+        case M_ROW_EXIT_TEST:
+            cat_test_close();
+            s.daypart_pick = 0;
             s.daypart_forced = false;
             to_passive();
             break;
         default:
-            break;  // FILL/EMPTY/AUDITION/SLEEP are main's to carry out
+            break;
     }
-    return item;
+    return ACT_NONE;
+}
+
+void cat_set_model_info(int sessions, int days, bool mature, int thresh_pct,
+                        int hits, int misses, const char *best_act,
+                        int peak_min)
+{
+    s.mi_sessions = sessions;
+    s.mi_days = days;
+    s.mi_mature = mature;
+    s.mi_thresh = thresh_pct;
+    s.mi_hits = hits;
+    s.mi_misses = misses;
+    s.mi_peak = peak_min;
+    snprintf(s.mi_best, sizeof(s.mi_best), "%s", best_act ? best_act : "-");
 }
 
 void cat_set_debug_lines(const char *a, const char *b)
@@ -2210,7 +2383,7 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
-    if (s.test_menu) {
+    if (s.screen >= TS_MAIN) {
         compose_test();
     } else if (s.status_screen) {
         compose_status();
@@ -2232,7 +2405,7 @@ void cat_render(void)
         for (int row = 0; row < BAND_ROWS; row++) {
             uint16_t *out = buf + row * LCD_H_RES;
 
-            if (s.status_screen || s.test_menu) {
+            if (s.status_screen || s.screen >= TS_MAIN) {
                 // The menu: finer 6 px cells on black, no world behind.
                 const int lx_cell = (y0 + row) / MENU_SCALE;
                 const uint16_t *pal = s_pal565[BG_DAY];
