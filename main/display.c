@@ -225,6 +225,13 @@ esp_err_t display_flush_band(int band_index, const uint16_t *buffer)
 
 esp_err_t display_power_off(void)
 {
+    // Wait for both band buffers — i.e. all in-flight DMA — before touching
+    // the command interface, or the panel wedges mid-transfer.
+    xSemaphoreTake(s_buffers_free, portMAX_DELAY);
+    xSemaphoreTake(s_buffers_free, portMAX_DELAY);
+    xSemaphoreGive(s_buffers_free);
+    xSemaphoreGive(s_buffers_free);
+
     // Display off, then sleep-in: the panel drops to microamps.
     esp_err_t ret = esp_lcd_panel_io_tx_param(s_io, 0x28, NULL, 0);
     if (ret == ESP_OK) {

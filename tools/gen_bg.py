@@ -26,14 +26,14 @@ def decode_png(path):
         if tag == b'IHDR':
             w, h = struct.unpack('>II', d[pos+8:pos+16])
             ctype = d[pos+17]
-            assert d[pos+16] == 8 and ctype in (3, 6), f'unsupported PNG (ctype {ctype})'
+            assert d[pos+16] == 8 and ctype in (2, 3, 6), f'unsupported PNG (ctype {ctype})'
         elif tag == b'PLTE':
             plte = d[pos+8:pos+8+ln]
         elif tag == b'IDAT':
             idat += d[pos+8:pos+8+ln]
         pos += 12 + ln
     raw = zlib.decompress(idat)
-    bpp = 4 if ctype == 6 else 1
+    bpp = 4 if ctype == 6 else (3 if ctype == 2 else 1)
     stride = w * bpp
     img = bytearray(w * h * 4)
     prev = bytearray(stride)
@@ -63,6 +63,11 @@ def decode_png(path):
         for i in range(w * h):
             pi = img[i] * 3
             rgba[i*4:i*4+4] = bytes((plte[pi], plte[pi+1], plte[pi+2], 255))
+        return w, h, rgba
+    if ctype == 2:
+        rgba = bytearray(w * h * 4)
+        for i in range(w * h):
+            rgba[i*4:i*4+4] = bytes((img[i*3], img[i*3+1], img[i*3+2], 255))
         return w, h, rgba
     return w, h, img
 

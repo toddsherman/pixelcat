@@ -74,10 +74,7 @@ static uint16_t s_pal565[BG_VARIANTS][C_COUNT];
 static uint8_t s_canvas[CANVAS_W * CANVAS_H];
 
 #define FLOOR_Y 42   // feet on the path (landscape logical rows)
-#define BG_FPS 3.0f
 #define SPRITE_W ANIM_W
-#define POS_MIN 1.0f
-#define POS_MAX (CANVAS_W - SPRITE_W - 1.0f)
 #define CENTRE ((CANVAS_W - SPRITE_W) / 2.0f)
 
 static inline void px(int x, int y, uint8_t c)
@@ -199,7 +196,6 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
 #define TILT_LEAP_ON (0.45f * TILT_G)
 #define TILT_LEAP_OFF (0.40f * TILT_G)
 #define LEAP_SPEED 34.0f
-#define WANDER_FAR 12.0f  // beyond this from centre, the next wander goes home
 
 typedef struct {
     float x, y, age;
@@ -211,11 +207,11 @@ typedef struct {
 static struct {
     mode_t mode;
     float t;
-    float bg_t;
     float decide_in;
     float since_touch;
-    float pos_x;
-    float move_target;   // trot destination while wandering
+    float pos_x;         // screen position, pinned to CENTRE: the world moves
+    float world_x;       // cat's position in the looping world, logical px
+    float move_remaining;  // px left in the current wander
     bool wandering;      // trot has a destination (vs tilt-driven)
     bool tilt_walk;      // trot is being driven by device tilt
     bool tilt_leap;      // leap chain is being driven by device tilt
@@ -302,22 +298,14 @@ static void to_passive(void)
     s.decide_in = 3.0f + 4.0f * frand01();
 }
 
-// Start a wandering trot. Far from centre, the destination is home; nearby,
-// it is a modest hop either way. Facing locks toward the destination.
+// Start a wandering trot: the world is endless, so wander is just a
+// direction and a distance.
 static void start_wander(void)
 {
-    float target;
-    if (fabsf(s.pos_x - CENTRE) > WANDER_FAR) {
-        target = CENTRE + (frand01() - 0.5f) * 4.0f;
-    } else {
-        const float d = 6.0f + 10.0f * frand01();
-        target = s.pos_x + ((frand01() < 0.5f) ? -d : d);
-        if (target < POS_MIN + 2.0f) target = s.pos_x + d;
-        if (target > POS_MAX - 2.0f) target = s.pos_x - d;
-    }
-    s.move_target = target;
+    s.move_dir = (frand01() < 0.5f) ? -1 : 1;
+    s.move_remaining = (6.0f + 10.0f * frand01()) * PIX_SCALE;
     s.wandering = true;
-    s.facing_left = target < s.pos_x;
+    s.facing_left = s.move_dir < 0;
     enter(M_TROT);
 }
 
@@ -387,7 +375,6 @@ void cat_init(void)
 void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
     s.t += dt;
-    s.bg_t += dt;
     s.tap_age += dt;
     if (s.tap_age > DOUBLE_TAP_S) {
         s.tap_side = 0;
@@ -530,34 +517,27 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 // Brisker toward the top of the walking band.
                 const float mag = fminf((tilt_mag - TILT_WALK_ON) /
                                         (TILT_LEAP_ON - TILT_WALK_ON), 1.0f);
-                s.pos_x += (float)s.move_dir * TROT_SPEED * (0.7f + 0.5f * mag) * dt;
-                if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
-                if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
+                s.world_x += (float)s.move_dir * TROT_SPEED * PIX_SCALE *
+                             (0.7f + 0.5f * mag) * dt;
                 break;
             }
             if (s.wandering) {
-                const float dir = (s.move_target > s.pos_x) ? 1.0f : -1.0f;
-                s.pos_x += dir * TROT_SPEED * dt;
-                if ((dir > 0 && s.pos_x >= s.move_target) ||
-                    (dir < 0 && s.pos_x <= s.move_target)) {
-                    s.pos_x = s.move_target;
+                const float step = TROT_SPEED * PIX_SCALE * dt;
+                s.world_x += (float)s.move_dir * step;
+                s.move_remaining -= step;
+                if (s.move_remaining <= 0.0f) {
                     to_passive();
                 }
             } else {
                 to_passive();
-                break;
             }
-            if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
-            if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
             break;
 
         case M_LEAP: {
             // Travel during the airborne middle of the cycle.
             const int f = anim_frame();
             if (f >= 1 && f <= 5) {
-                s.pos_x += (float)s.move_dir * LEAP_SPEED * dt;
-                if (s.pos_x < POS_MIN) s.pos_x = POS_MIN;
-                if (s.pos_x > POS_MAX) s.pos_x = POS_MAX;
+                s.world_x += (float)s.move_dir * LEAP_SPEED * PIX_SCALE * dt;
             }
             if (anim_done()) {
                 if (s.tilt_leap && tilt_mag > TILT_LEAP_OFF) {
@@ -675,6 +655,9 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         }
         s.prev_frame = frame;
     }
+
+    s.world_x = fmodf(fmodf(s.world_x, (float)BG_WORLD_W) + (float)BG_WORLD_W,
+                      (float)BG_WORLD_W);
 
     s.was_down = touch->down;
 }
@@ -908,7 +891,9 @@ void cat_render(void)
         compose();
     }
 
-    const uint16_t *bg = cat_bg[s.daypart][((int)(s.bg_t * BG_FPS)) % BG_FRAMES];
+    const uint16_t (*world)[BG_STRIP_H] = cat_bg[s.daypart];
+    // The cat is pinned to screen centre; his world position sets the scroll.
+    const int scroll = (int)s.world_x - (int)(CENTRE * PIX_SCALE);
 
     for (int band = 0; band < BAND_COUNT; band++) {
         uint16_t *buf = display_acquire_band();
@@ -916,8 +901,9 @@ void cat_render(void)
 
         for (int row = 0; row < BAND_ROWS; row++) {
             uint16_t *out = buf + row * LCD_H_RES;
-            // Backgrounds are baked pre-rotated, so this stays a straight copy.
-            memcpy(out, &bg[(y0 + row) * LCD_H_RES], LCD_H_RES * sizeof(uint16_t));
+            // Each panel row is one pre-rotated world-column strip.
+            const int wx = ((scroll + y0 + row) % BG_WORLD_W + BG_WORLD_W) % BG_WORLD_W;
+            memcpy(out, world[wx], LCD_H_RES * sizeof(uint16_t));
 
             // Rotated overlay: a panel row is a logical column. The panel row
             // fixes the logical x cell; walking panel columns descends the
