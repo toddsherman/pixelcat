@@ -19,7 +19,9 @@
 #include "freertos/task.h"
 #include "cat_bg.h"
 #include "imu.h"
+#include "nvs_flash.h"
 #include "rtc.h"
+#include "stats.h"
 #include "wifi_time.h"
 #include "sun_table.h"
 #include "touch.h"
@@ -110,6 +112,7 @@ static void cat_task(void *arg)
     int64_t last_us = esp_timer_get_time();
     int64_t last_log_us = last_us;
     int64_t last_batt_us = 0;
+    int64_t last_save_us = 0;
     int daypart_for_log = 0;
 
     for (;;) {
@@ -136,18 +139,31 @@ static void cat_task(void *arg)
         }
         power_idle_check();
 
+        // The stats engine waits for a trustworthy clock before applying the
+        // offline gap: NTP normally lands within seconds; past 45 s settle
+        // for the PCF-seeded clock (which under-counts, kindly).
+        if (!stats_catchup_done() &&
+            (wifi_time_synced() || now > 45 * 1000000LL)) {
+            stats_apply_offline();
+        }
+        stats_tick(dt, cat_state() == CAT_SLEEPING, cat_purr_level());
+        stats_on_walk(cat_take_walked());
+
         audio_set_purr(cat_purr_level());
         if (cat_take_chirp()) {
             audio_chirp();
         }
         if (cat_take_hiss()) {
             audio_hiss();
+            stats_on_scare();
+            stats_store_save();
         }
         if (cat_take_step()) {
             audio_step();
         }
         if (cat_take_boing()) {
             audio_boing();
+            stats_on_jump();
         }
         if (cat_take_slurp()) {
             audio_slurp();
@@ -158,6 +174,12 @@ static void cat_task(void *arg)
         const int dash_dir = cat_take_dash();
         if (dash_dir) {
             audio_dash(dash_dir);
+            stats_on_jump();
+        }
+
+        if (stats_catchup_done() && now - last_save_us > 300 * 1000000LL) {
+            last_save_us = now;
+            stats_store_save();
         }
 
         cat_render();
@@ -173,6 +195,7 @@ static void cat_task(void *arg)
             if (pcf_date(&yy, &mm, &dd)) {
                 daypart_for_log = daypart_for(yy, mm, dd, pcf_minutes_of_day());
                 cat_set_daypart(daypart_for_log);
+                stats_note_date(yy * 10000 + mm * 100 + dd);
             }
         }
 
@@ -187,10 +210,12 @@ static void cat_task(void *arg)
             imu_gravity(g);
             int st1, st2;
             battery_raw(&st1, &st2);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d",
+            const stats_t *st = stats_get();
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | H %d A %d E %d X %d",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
                      (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2,
-                     pcf_minutes_of_day(), daypart_for_log);
+                     pcf_minutes_of_day(), daypart_for_log,
+                     (int)st->hunger, (int)st->affection, (int)st->energy, (int)st->exercise);
         }
 
         vTaskDelayUntil(&last_wake, period);
@@ -233,6 +258,21 @@ void app_main(void)
     if (pcf_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no RTC: the scene stays in daylight");
     }
+
+    // NVS before anything that touches it (wifi_time's own init call is then
+    // a harmless no-op) — the stats blob loads from here.
+    esp_err_t nvs = nvs_flash_init();
+    if (nvs == ESP_ERR_NVS_NO_FREE_PAGES || nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs = nvs_flash_init();
+    }
+    stats_reset();
+    if (nvs == ESP_OK && stats_store_load()) {
+        ESP_LOGI(TAG, "stats restored");
+    } else {
+        ESP_LOGI(TAG, "fresh cat");
+    }
+
     wifi_time_start();
     if (audio_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no audio: the cat purrs in spirit only");

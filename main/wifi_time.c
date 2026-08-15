@@ -24,8 +24,14 @@
 static const char *TAG = "wifi_time";
 
 static EventGroupHandle_t s_events;
+static volatile bool s_synced;
 #define BIT_CONNECTED BIT0
 #define BIT_FAILED BIT1
+
+bool wifi_time_synced(void)
+{
+    return s_synced;
+}
 
 static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -101,6 +107,7 @@ static void wifi_time_task(void *arg)
             // Pacific local time with automatic DST.
             setenv("TZ", "PST8PDT,M3.2.0/2,M11.1.0/2", 1);
             tzset();
+            s_synced = true;
             time_t now = time(NULL);
             struct tm lt;
             localtime_r(&now, &lt);
@@ -136,6 +143,7 @@ out:
             esp_sntp_config_t sntp_cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
             esp_netif_sntp_init(&sntp_cfg);
             if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(15000)) == ESP_OK) {
+                s_synced = true;
                 time_t now = time(NULL);
                 struct tm lt;
                 localtime_r(&now, &lt);

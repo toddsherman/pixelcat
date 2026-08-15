@@ -5,6 +5,7 @@
 #include "button.h"
 #include "config.h"
 #include "display.h"
+#include "stats.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -43,6 +44,10 @@ void power_idle_check(void)
     }
 
     ESP_LOGI(TAG, "idle %ds: sleeping (BOOT or PWR wakes)", POWER_IDLE_S);
+    // The wake path is esp_restart, so persist the cat before going dark;
+    // boot-time offline catch-up then covers however long the nap lasts.
+    stats_apply_offline();
+    stats_store_save();
     audio_stop();
     display_power_off();
 

@@ -226,6 +226,7 @@ static struct {
     bool slurp;
     bool swipe;
     int dash;            // pending dash direction, 0 = none
+    float walked;        // logical px moved since last cat_take_walked()
     int prev_frame;
 
     bool was_down;
@@ -518,13 +519,16 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
                 // Brisker toward the top of the walking band.
                 const float mag = fminf((tilt_mag - TILT_WALK_ON) /
                                         (TILT_LEAP_ON - TILT_WALK_ON), 1.0f);
-                s.world_x += (float)s.move_dir * TROT_SPEED * PIX_SCALE *
-                             (0.7f + 0.5f * mag) * dt;
+                const float tstep = TROT_SPEED * PIX_SCALE *
+                                    (0.7f + 0.5f * mag) * dt;
+                s.world_x += (float)s.move_dir * tstep;
+                s.walked += tstep;
                 break;
             }
             if (s.wandering) {
                 const float step = TROT_SPEED * PIX_SCALE * dt;
                 s.world_x += (float)s.move_dir * step;
+                s.walked += step;
                 s.move_remaining -= step;
                 if (s.move_remaining <= 0.0f) {
                     to_passive();
@@ -538,7 +542,9 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             // Travel during the airborne middle of the cycle.
             const int f = anim_frame();
             if (f >= 1 && f <= 5) {
-                s.world_x += (float)s.move_dir * LEAP_SPEED * PIX_SCALE * dt;
+                const float lstep = LEAP_SPEED * PIX_SCALE * dt;
+                s.world_x += (float)s.move_dir * lstep;
+                s.walked += lstep;
             }
             if (anim_done()) {
                 if (s.tilt_leap && tilt_mag > TILT_LEAP_OFF) {
@@ -695,6 +701,13 @@ int cat_take_dash(void)
 {
     const int v = s.dash;
     s.dash = 0;
+    return v;
+}
+
+float cat_take_walked(void)
+{
+    const float v = s.walked;
+    s.walked = 0.0f;
     return v;
 }
 

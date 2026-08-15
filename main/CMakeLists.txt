@@ -13,6 +13,7 @@ idf_component_register(
         "rtc.c"
         "wifi_time.c"
         "power.c"
+        "stats.c"
     INCLUDE_DIRS "."
 )
 
