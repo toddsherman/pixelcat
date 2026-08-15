@@ -68,8 +68,10 @@ Two distinct off-screen states:
   settling into centre. Left alone, he wanders in on his own after a while.
   No grudge.
 - **Hiding** (after being scared): shaking the device still triggers the
-  arch-and-hiss — but now he then **bolts off-screen** and hides at a spot
-  in the world, and the scare **costs affection**. Sound does not summon a
+  arch-and-hiss — and the moment the hiss animation completes he **flees in
+  panicked leaps**: the leap cycle chained at elevated speed, bounding off
+  the screen edge in under a second — never a walk. He hides at a spot in
+  the world, and the scare **costs affection**. Sound does not summon a
   scared cat. While he hides, swiping pans the camera through the looping
   world to search for him.
 - **Scares escalate.** Each scare without a reconciliation between pushes
