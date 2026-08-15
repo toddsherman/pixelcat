@@ -36,6 +36,10 @@
 
 static const char *TAG = "pixelcat";
 
+// The charge at which everything worth keeping is written to flash, on the
+// assumption that there may not be a later chance.
+#define LOW_BATT_PCT 12
+
 static i2c_master_bus_handle_t s_i2c_bus;
 
 static esp_err_t i2c_init(void)
@@ -175,6 +179,10 @@ static void cat_task(void *arg)
     int64_t last_log_us = last_us;
     int64_t last_batt_us = 0;
     int64_t last_save_us = 0;
+    int64_t last_flush_us = 0;
+    int64_t last_mark_us = 0;
+    int batt_pct = -1;
+    bool low_saved = false;
     int daypart_for_log = 0;
 
     if (s_pending_arm >= 0) {
@@ -409,8 +417,21 @@ static void cat_task(void *arg)
         if (stats_catchup_done() && now - last_save_us > 300 * 1000000LL) {
             last_save_us = now;
             stats_store_save();
+        }
+        // How far this run got, once a minute. On the five-minute save timer
+        // any run that died sooner than that reported "0 s, battery ?" — the
+        // early crash, which is the one worth reading about.
+        if (now - last_mark_us > 60 * 1000000LL) {
+            last_mark_us = now;
+            logbook_mark_uptime(batt_pct);
+        }
+        // The card gets whatever has accumulated every 10 s. Both buffers are
+        // usually empty, so this costs nothing most of the time — but on the
+        // old five-minute timer a reset took the whole window's events with
+        // it, which during a flashing session meant nearly all of them.
+        if (now - last_flush_us > 10 * 1000000LL) {
+            last_flush_us = now;
             logbook_flush();
-            logbook_mark_uptime();
         }
 
         // Gauges refresh every frame so each pixel row lights the moment
@@ -444,6 +465,25 @@ static void cat_task(void *arg)
             bool chg;
             if (battery_read(&pct, &chg)) {
                 cat_set_battery(pct, chg);
+                batt_pct = pct;
+                // Below this, the next brownout could be the last thing that
+                // happens, and a five-minute save timer is no use to a board
+                // that is about to go dark. Get the cat and the model onto
+                // flash while there is still power to write with. It re-arms
+                // only once charging lifts it clear, so a flat battery costs
+                // one save rather than one every five seconds.
+                if (!chg && pct >= 0 && pct <= LOW_BATT_PCT) {
+                    if (!low_saved) {
+                        low_saved = true;
+                        ESP_LOGW(TAG, "battery %d%%: saving state now", pct);
+                        stats_store_save();
+                        model_store_save();
+                        logbook_mark_uptime(pct);
+                        logbook_flush();
+                    }
+                } else if (pct > LOW_BATT_PCT + 5) {
+                    low_saved = false;
+                }
             }
             stats_set_trust(cat_scare_level(), cat_wary());
 
@@ -579,6 +619,7 @@ void app_main(void)
     // runs on a plain procedural sky and remembers nothing.
     sdcard_mount(s_i2c_bus);
     logbook_init();
+    logbook_capture_console();  // from here on, warnings outlive the cable
 
     if (touch_init(s_i2c_bus) != ESP_OK) {
         ESP_LOGW(TAG, "no touch: the cat cannot be petted");

@@ -29,6 +29,12 @@ typedef enum {
 
 void logbook_init(void);
 
+// Mirror every ESP_LOGW and ESP_LOGE into log.txt on the card (two capped
+// generations). Console output otherwise lives only on the USB cable, so
+// anything the board complains about while it is off the desk vanishes.
+// Call once, as early as possible — warnings before this are console-only.
+void logbook_capture_console(void);
+
 // Record an event. Cheap: appends to a small RAM ring, no I/O.
 void logbook_add(log_event_t ev, int a, int b);
 
@@ -45,6 +51,8 @@ void logbook_note_boot(void);
 // The boot log survives; it is diagnostics, not training.
 void logbook_forget(void);
 
-// Stamp how long this run has lasted, so the next boot can report it even
-// if this one ends without warning.
-void logbook_mark_uptime(void);
+// Stamp how long this run has lasted and the charge remaining, so the next
+// boot can report both even if this one ends without warning. A flat battery
+// and a crash leave the same reset reason; the charge is what separates them.
+// Pass -1 when the gauge cannot be read.
+void logbook_mark_uptime(int batt_pct);

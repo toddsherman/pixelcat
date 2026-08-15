@@ -120,7 +120,17 @@ void power_idle_check(void)
     // boot-time offline catch-up then covers however long the nap lasts.
     stats_apply_offline();
     stats_store_save();
-    logbook_flush();  // the card sleeps too; get the day's events down first
+    // The card sleeps too: get the events, the warnings, and how far this
+    // run got down before it does.
+    {
+        int spct = -1;
+        bool splugged;
+        if (!battery_read(&spct, &splugged)) {
+            spct = -1;
+        }
+        logbook_mark_uptime(spct);
+    }
+    logbook_flush();
     audio_stop();
     display_power_off();
 
