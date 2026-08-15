@@ -99,15 +99,20 @@ int cat_flush_errors(void);
 // the engine cannot perform itself (gauges, auditions, sleep) come back as
 // a TEST_* code for main to carry out.
 enum {
-    TEST_DAYPART = 0, TEST_FILL, TEST_EMPTY, TEST_SCARE,
-    TEST_SUMMON, TEST_AUDITION, TEST_SLEEP, TEST_EXIT, TEST_COUNT,
+    TEST_DAYPART = 0,  // force a time of day, to check the park's art
+    TEST_WEATHER,      // reserved: lights up when weather exists
+    TEST_ANIM,         // browse every animation, playing in the park
+    TEST_FILL, TEST_EMPTY, TEST_SCARE, TEST_SUMMON, TEST_AUDITION,
+    TEST_SLEEP, TEST_EXIT, TEST_COUNT,
 };
 
-void cat_test_open(void);
-void cat_test_close(void);
+// The two buttons, handed straight to the engine: it owns the menu and the
+// animation browser and only hands back the actions it cannot perform
+// itself (gauges, auditions, sleep). -1 means nothing for main to do.
+int cat_button_pwr(void);
+int cat_button_boot(void);
 bool cat_test_is_open(void);
-void cat_test_next(void);
-int cat_test_select(void);   // -1 if the menu is not open
+void cat_test_close(void);
 
 // Two short lines of whatever is worth knowing, shown under the test menu.
 void cat_set_debug_lines(const char *a, const char *b);

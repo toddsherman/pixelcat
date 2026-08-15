@@ -302,6 +302,24 @@ static const anim_desc_t k_anim[M_MODE_COUNT] = {
     [M_EMERGE] = {ANIM_PORTRAIT_TAIL, ANIM_PORTRAIT_TAIL_N, 3.5f, true},
 };
 
+// Every cycle worth looking at, in the order the sprite sheet had them.
+static const struct {
+    mode_t mode;
+    const char *name;
+} k_anims[] = {
+    {M_PORTRAIT, "PORTRAIT"}, {M_PROFILE, "PROFILE"},
+    {M_CLEAN_PAW, "CLEAN PAW"}, {M_CLEAN_EAR, "CLEAN EAR"},
+    {M_TROT, "TROT"},           {M_LEAP, "LEAP"},
+    {M_SLEEP, "SLEEP"},         {M_PAWING, "PAWING"},
+    {M_BIG_JUMP, "BIG JUMP"},   {M_ANGRY, "ANGRY"},
+    {M_PET, "PET"},             {M_EAT, "EAT"},
+    {M_PLAY_PAW, "PLAY PAW"},
+};
+#define ANIM_COUNT ((int)(sizeof(k_anims) / sizeof(k_anims[0])))
+
+// A little text, drawn by the menus and the animation browser.
+static int draw_text(int x, int y, const char *str, uint8_t col);
+
 // Behaviour tuning.
 #define SHAKE_HISS_THRESHOLD 6.5f
 #define RUN_ZONE_L (CANVAS_W / 3)
@@ -382,6 +400,8 @@ static struct {
     int hits[5];                       // gauge reached full today
     bool test_menu;                    // the button-driven test menu is up
     int test_sel;
+    bool anim_browse;                  // watching a single cycle play
+    int anim_sel;
     bool daypart_forced;               // a forced daypart outranks the clock
     char dbg_line1[24], dbg_line2[24];
 
@@ -715,6 +735,19 @@ void cat_init(void)
 
 void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
+    if (s.anim_browse) {
+        // A cycle on display: let it play and nothing else.
+        s.t += dt;
+        const int f = anim_frame();
+        if (f != s.prev_frame) {
+            s.prev_frame = f;
+        }
+        if (anim_done()) {
+            s.t = 0.0f;  // loop the one-shots too, so they can be studied
+        }
+        s.was_down = touch->down;
+        return;
+    }
     s.t += dt * anim_pace();  // a tired cat runs a beat slow, everywhere
     s.tap_age += dt;
     if (s.tap_age > DOUBLE_TAP_S) {
@@ -1642,6 +1675,12 @@ static void compose(void)
         }
     }
 
+    if (s.anim_browse) {
+        // Its name, and how to get out, along the bottom.
+        draw_text(2, CANVAS_H - 6, k_anims[s.anim_sel].name, C_WHITE);
+        return;
+    }
+
     // HUD: five gauges — yarn ball (play), fish (food), heart (affection),
     // dumbbell (exercise), moon (his sleep) — all 6 cells tall, 2 below the
     // top edge. Each fills bottom-up with its stat.
@@ -1752,10 +1791,10 @@ static void draw_glyph(int gx, int gy, int glyph, uint8_t col)
 }
 
 // Returns the x just past the text.
-static int draw_text(int x, int y, const char *s, uint8_t col)
+static int draw_text(int x, int y, const char *str, uint8_t col)
 {
-    for (; *s; s++) {
-        draw_glyph(x, y, glyph_of(*s), col);
+    for (; *str; str++) {
+        draw_glyph(x, y, glyph_of(*str), col);
         x += 4;
     }
     return x;
@@ -1838,9 +1877,10 @@ static void compose_status(void)
 // ---------------------------------------------------------------------------
 
 static const char *const k_test_items[TEST_COUNT] = {
-    "DAYPART", "FILL ALL", "EMPTY ALL", "SCARE HIM",
-    "SUMMON", "AUDITION", "SLEEP NOW", "EXIT",
+    "DAYPART", "WEATHER", "ANIMATIONS", "FILL ALL", "EMPTY ALL",
+    "SCARE HIM", "SUMMON", "AUDITION", "SLEEP NOW", "EXIT",
 };
+
 
 static const char *const k_daypart_names[BG_VARIANTS] = {
     "DAY", "DAWN", "DUSK", "TWILIGHT", "NIGHT",
@@ -1863,8 +1903,11 @@ static void compose_test(void)
         }
         draw_text(8, y, k_test_items[i], on ? C_WHITE : C_UI_DIM);
     }
-    // The daypart entry shows which one it would force.
+    // The daypart entry shows which one it would force; weather is a slot
+    // held open for when it exists.
     draw_text(44, 11, k_daypart_names[s.daypart], C_BATT_Y);
+    draw_text(44, 17, "-", C_UI_DIM);
+    draw_text(44, 23, k_anims[s.anim_sel].name, C_BATT_Y);
 
     // A footer of the things worth knowing at a glance.
     const int fy = MENU_H - 12;
@@ -1872,27 +1915,59 @@ static void compose_test(void)
     draw_text(3, fy + 6, s.dbg_line2, C_UI_DIM);
 }
 
-void cat_test_open(void)
+// Browsing animations: the menu steps aside so the cycle can be watched in
+// the park itself, with its name along the bottom. PWR walks the list, BOOT
+// returns to the menu.
+static void anim_show(void)
 {
-    s.test_menu = true;
-    s.test_sel = 0;
-    s.status_screen = false;
+    s.cam_free = false;
+    s.cam_x = s.world_x;
+    s.pos_x = CENTRE;
+    s.hiding = false;
+    s.wandering = false;
+    s.tilt_walk = false;
+    s.tilt_leap = false;
+    s.goal_kind = 0;
+    enter(k_anims[s.anim_sel].mode);
 }
 
 bool cat_test_is_open(void)
 {
-    return s.test_menu;
+    return s.test_menu || s.anim_browse;
 }
 
-void cat_test_next(void)
+void cat_test_close(void)
 {
-    if (s.test_menu) {
-        s.test_sel = (s.test_sel + 1) % TEST_COUNT;
+    s.test_menu = false;
+    s.anim_browse = false;
+}
+
+int cat_button_pwr(void)
+{
+    if (s.anim_browse) {
+        s.anim_sel = (s.anim_sel + 1) % ANIM_COUNT;
+        anim_show();
+        return -1;
     }
+    if (!s.test_menu) {
+        s.test_menu = true;
+        s.test_sel = 0;
+        s.status_screen = false;
+        return -1;
+    }
+    s.test_sel = (s.test_sel + 1) % TEST_COUNT;
+    return -1;
 }
 
-int cat_test_select(void)
+int cat_button_boot(void)
 {
+    if (s.anim_browse) {
+        // Back to the menu, and back to living his life.
+        s.anim_browse = false;
+        s.test_menu = true;
+        to_passive();
+        return -1;
+    }
     if (!s.test_menu) {
         return -1;
     }
@@ -1901,6 +1976,13 @@ int cat_test_select(void)
         case TEST_DAYPART:
             s.daypart = (s.daypart + 1) % BG_VARIANTS;
             s.daypart_forced = true;
+            break;
+        case TEST_WEATHER:
+            break;  // nothing to cycle until weather exists
+        case TEST_ANIM:
+            s.test_menu = false;
+            s.anim_browse = true;
+            anim_show();
             break;
         case TEST_SCARE:
             s.scare_level = (s.scare_level < 4) ? s.scare_level + 1 : 4;
@@ -1924,15 +2006,9 @@ int cat_test_select(void)
             s.test_menu = false;
             break;
         default:
-            // FILL/EMPTY/AUDITION/SLEEP belong to main; it closes the menu.
-            break;
+            break;  // FILL/EMPTY/AUDITION/SLEEP are main's to carry out
     }
     return item;
-}
-
-void cat_test_close(void)
-{
-    s.test_menu = false;
 }
 
 void cat_set_debug_lines(const char *a, const char *b)

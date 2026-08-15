@@ -52,8 +52,16 @@ is the HUD. No navigation state, no open/close.
     icon with its percentage. Tap to exit.
 - Icon hit-boxes take priority over the side-zone leap taps (same precedence
   the battery tap uses today).
-- **Buttons** do exactly one thing: wake the device. PWR's 6-second hardware
-  power-off is untouchable. Shortcuts can be added later if a need emerges.
+- **Buttons** drive the **test menu** — waking the device is still what they
+  do first, but a need emerged. PWR opens the menu and steps through it;
+  BOOT chooses; EXIT returns to normal play.
+  - **Daypart** — force any time of day, so the park's art can be checked
+    without waiting for dusk. It sticks until the next reboot.
+  - **Weather** — a slot held open until weather exists.
+  - **Animations** — browse every cycle, playing in the park with its name
+    on screen: PWR steps to the next, BOOT goes back to the menu.
+  - Plus the gameplay testers: fill or empty every gauge, scare him, summon
+    or banish him, force a proactive audition, sleep now.
 
 ## The microphone, absence, and hiding
 

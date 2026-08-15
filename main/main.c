@@ -213,14 +213,10 @@ static void cat_task(void *arg)
         // Buttons drive the test menu: PWR opens it and steps through,
         // BOOT chooses. Everything here was otherwise a rebuild away.
         if (button_press) {
-            if (cat_test_is_open()) {
-                cat_test_next();
-            } else {
-                cat_test_open();
-            }
+            cat_button_pwr();
         }
-        if (boot_press && cat_test_is_open()) {
-            switch (cat_test_select()) {
+        if (boot_press) {
+            switch (cat_button_boot()) {
                 case TEST_FILL:
                     stats_debug_set(100.0f);
                     cat_test_close();
