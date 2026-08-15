@@ -84,7 +84,7 @@ static uint16_t s_pal565[BG_VARIANTS][C_COUNT];
 
 static uint8_t s_canvas[CANVAS_W * CANVAS_H];
 
-#define FLOOR_Y 42   // feet on the path (landscape logical rows)
+#define FLOOR_Y 44   // feet on the path (landscape logical rows)
 #define SPRITE_W ANIM_W
 #define CENTRE ((CANVAS_W - SPRITE_W) / 2.0f)
 
