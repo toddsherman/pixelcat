@@ -68,9 +68,16 @@ Two distinct off-screen states:
   arch-and-hiss — but now he then **bolts off-screen** and hides at a spot
   in the world, and the scare **costs affection**. Sound does not summon a
   scared cat. While he hides, swiping pans the camera through the looping
-  world; find him tucked at his hiding spot and tap or pet him to make
-  peace (small affection recovery). The camera then eases back to following
-  him and normal life resumes.
+  world to search for him.
+- **Scares escalate.** Each scare without a reconciliation between pushes
+  his hiding spot farther away — up to the loop's maximum (half the world
+  from where you're looking) — and costs more affection. Scaring him while
+  he is already hiding re-hides him farther immediately.
+- **Reconciliation is purr-gated.** Finding him and tapping brings him out
+  wary — the fear level persists. To truly make peace, pet him at his
+  hiding spot (or after he emerges) until he actually purrs: that resets
+  the escalation to baseline, recovers a little affection, and the camera
+  eases back to following him. A purr cannot be faked; it has to be earned.
 
 While he is off-screen, petting/tap-on-cat/leap zones are inert; the swipe
 camera exists only in the hiding state.
