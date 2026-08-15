@@ -10,7 +10,10 @@
 
 esp_err_t pcf_init(i2c_master_bus_handle_t bus);
 
-// Local time as minutes since midnight (0..1439), or -1 if the RTC is absent.
+// Local time as minutes since midnight (0..1439), or -1 if unknown.
+// Prefers the ESP system clock (NTP-synced; the external PCF85063 on this
+// board ticks at roughly half speed and cannot be trusted for elapsed time),
+// falling back to the PCF only before the first sync.
 int pcf_minutes_of_day(void);
 
 // Civil date. Returns false if the RTC is absent.

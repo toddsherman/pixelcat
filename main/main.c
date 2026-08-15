@@ -95,8 +95,9 @@ static int daypart_for(int year, int mon, int day, int minutes)
     // so night holds until then.
     if (minutes >= rise - 10 && minutes < rise + 25) return BG_DAWN;
     if (minutes >= rise + 25 && minutes < set - 30) return BG_DAY;
-    if (minutes >= set - 30 && minutes < set + 15) return BG_DUSK;
-    if (minutes >= set + 15 && minutes < set + 50) return BG_TWILIGHT;
+    // Real darkness lands about half an hour after sunset.
+    if (minutes >= set - 30 && minutes < set + 10) return BG_DUSK;
+    if (minutes >= set + 10 && minutes < set + 30) return BG_TWILIGHT;
     return BG_NIGHT;
 }
 

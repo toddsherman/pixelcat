@@ -110,6 +110,20 @@ esp_err_t pcf_init(i2c_master_bus_handle_t bus)
     }
     ESP_LOGI(TAG, "time %04d-%02d-%02d %02d:%02d", now.year, now.mon, now.day,
              now.hour, now.min);
+
+    // Seed the system clock from the PCF so the scene is roughly right until
+    // NTP lands; Pacific rules so localtime works before the sync path runs.
+    setenv("TZ", "PST8PDT,M3.2.0/2,M11.1.0/2", 1);
+    tzset();
+    struct tm seed = {.tm_year = now.year - 1900, .tm_mon = now.mon - 1,
+                      .tm_mday = now.day, .tm_hour = now.hour,
+                      .tm_min = now.min, .tm_sec = now.sec, .tm_isdst = -1};
+    const time_t t = mktime(&seed);
+    if (t > 0) {
+        const struct timeval tv = {.tv_sec = t};
+        settimeofday(&tv, NULL);
+    }
+
     s_ready = true;
     return ESP_OK;
 }
@@ -126,6 +140,13 @@ esp_err_t pcf_set_civil(int year, int mon, int day, int hour, int min, int sec)
 
 bool pcf_date(int *year, int *mon, int *day)
 {
+    struct tm lt;
+    if (sys_clock_valid(&lt)) {
+        *year = lt.tm_year + 1900;
+        *mon = lt.tm_mon + 1;
+        *day = lt.tm_mday;
+        return true;
+    }
     if (!s_ready) {
         return false;
     }
@@ -140,8 +161,20 @@ bool pcf_date(int *year, int *mon, int *day)
     return true;
 }
 
+static bool sys_clock_valid(struct tm *out)
+{
+    const time_t now = time(NULL);
+    localtime_r(&now, out);
+    // Before the first NTP sync the system clock sits in 1970.
+    return out->tm_year + 1900 >= 2020;
+}
+
 int pcf_minutes_of_day(void)
 {
+    struct tm lt;
+    if (sys_clock_valid(&lt)) {
+        return lt.tm_hour * 60 + lt.tm_min;
+    }
     if (!s_ready) {
         return -1;
     }
