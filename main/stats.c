@@ -35,11 +35,11 @@
 #define PLAY_LOVE_PER_HIT 0.6f
 #define PLAY_FOOD_PER_HIT 0.2f
 
-// Scares cost more each time until peace is made; a reconciliation recovers
-// a little of what fear took.
-#define AFFECT_SCARE_COST 8.0f
-#define AFFECT_SCARE_STEP 3.0f
-#define AFFECT_SCARE_MAX 20.0f
+// A scare empties the heart — but visibly: one gauge row falls every
+// SCARE_DRAIN_S, each with its own (lower) beep, so the loss is something
+// you watch happen. A reconciliation gives a little back.
+#define SCARE_DRAIN_S 0.75f
+#define GAUGE_ROW_VALUE (100.0f / (float)STATS_GAUGE_ROWS)
 #define AFFECT_RECONCILE 4.0f
 
 // A gauge counts as "achieved" for the day's streak once it touches this.
@@ -52,6 +52,9 @@ static int s_trust_level;
 static bool s_trust_wary;
 static uint8_t s_streak[ST_COUNT];
 static uint8_t s_hit_today[ST_COUNT];
+static float s_drain_t;    // seconds until the next heart row falls; <=0 idle
+static int s_drain_index;  // rows fallen so far, so each beep drops a step
+static int s_drain_beep;   // pending beep index, -1 = none
 
 void stats_set_trust(int scare_level, bool wary)
 {
@@ -99,10 +102,24 @@ void stats_reset(void)
     s_stats.sleep = 50.0f;
     s_pet_budget = 0.0f;
     s_day_serial = 0;
+    s_drain_t = 0.0f;
+    s_drain_index = 0;
+    s_drain_beep = -1;
     for (int i = 0; i < ST_COUNT; i++) {
         s_streak[i] = 0;
         s_hit_today[i] = 0;
     }
+}
+
+// How many gauge rows a value lights — the same arithmetic the HUD uses,
+// so the drain always falls on a row the eye can see.
+static int lit_rows(float v)
+{
+    if (v <= 0.0f) {
+        return 0;
+    }
+    const int n = (int)((v * STATS_GAUGE_ROWS + 50.0f) / 100.0f);
+    return (n > STATS_GAUGE_ROWS) ? STATS_GAUGE_ROWS : n;
 }
 
 const stats_t *stats_get(void)
@@ -141,6 +158,19 @@ void stats_tick(float dt, bool asleep, float purr)
     s_stats.food -= dt * FOOD_DECAY_PER_S;
     s_stats.affection -= dt * LOVE_DECAY_PER_S;
     const float xp = asleep ? ASLEEP_XP_FACTOR : 1.0f;
+
+    // The scare drain: a row falls, a beep sounds, until the heart is bare.
+    // Sampled up front so the frame that empties it is still a drain frame.
+    const bool draining = s_drain_t > 0.0f;
+    if (draining) {
+        s_drain_t -= dt;
+        if (s_drain_t <= 0.0f) {
+            const int rows = lit_rows(s_stats.affection) - 1;
+            s_stats.affection = (rows > 0) ? rows * GAUGE_ROW_VALUE : 0.0f;
+            s_drain_beep = s_drain_index++;
+            s_drain_t = (rows > 0) ? SCARE_DRAIN_S : 0.0f;
+        }
+    }
     s_stats.exercise -= dt * EXER_DECAY_PER_S * xp;
     s_stats.play -= dt * PLAY_DECAY_PER_S * xp;
 
@@ -153,7 +183,8 @@ void stats_tick(float dt, bool asleep, float purr)
         }
     } else {
         s_stats.sleep -= dt * SLEEP_DECAY_PER_S;
-        if (purr > PET_PURR_MIN) {
+        // No petting your way out of a scare while the heart is emptying.
+        if (purr > PET_PURR_MIN && !draining) {
             s_stats.affection += dt * PET_FILL_PER_S;
         }
     }
@@ -183,14 +214,20 @@ void stats_on_dash(void)
 
 void stats_on_scare(int level)
 {
-    float cost = AFFECT_SCARE_COST + AFFECT_SCARE_STEP * (float)(level - 1);
-    if (cost < AFFECT_SCARE_COST) {
-        cost = AFFECT_SCARE_COST;
+    // Every scare costs the whole heart; the escalation lives in how far
+    // he hides, not in the price. The rows fall one at a time from here.
+    (void)level;
+    if (s_stats.affection > 0.0f) {
+        s_drain_t = SCARE_DRAIN_S;
+        s_drain_index = 0;
     }
-    if (cost > AFFECT_SCARE_MAX) {
-        cost = AFFECT_SCARE_MAX;
-    }
-    s_stats.affection = clamp01_100(s_stats.affection - cost);
+}
+
+int stats_take_scare_beep(void)
+{
+    const int v = s_drain_beep;
+    s_drain_beep = -1;
+    return v;
 }
 
 void stats_on_reconcile(void)

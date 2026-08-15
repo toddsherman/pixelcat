@@ -40,6 +40,9 @@ void audio_dash(int dir);
 // MEOW_VARIANT in config.h selects the one he actually uses.
 void audio_meow(int variant);
 
+// One pip of the heart-drain scale; higher steps are lower tones.
+void audio_beep(int step);
+
 // True exactly once per detected sharp sound (a psst, a snap, a knock).
 bool audio_take_sound(void);
 

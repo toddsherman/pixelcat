@@ -23,6 +23,10 @@ typedef struct {
 // Menu order, for gauges and streaks alike.
 enum { ST_PLAY = 0, ST_FOOD, ST_LOVE, ST_EXER, ST_SLEEP, ST_COUNT };
 
+// Every HUD gauge is this many pixel rows tall; the scare drain steps
+// through them one at a time, so the numbers have to agree with the art.
+#define STATS_GAUGE_ROWS 6
+
 void stats_reset(void);
 const stats_t *stats_get(void);
 
@@ -34,10 +38,14 @@ void stats_tick(float dt, bool asleep, float purr);
 // dashing (stats_on_walk / stats_on_dash) — never from scares or pounces.
 void stats_on_walk(float logical_px);
 void stats_on_dash(void);         // a deliberate leap
-void stats_on_scare(int level);   // the shake hiss; higher levels cost more
+void stats_on_scare(int level);   // the shake hiss: empties the heart
 void stats_on_reconcile(void);    // peace made after a scare
 void stats_on_eat(float amount);  // finishing a bowl
 void stats_on_play_hit(void);     // one paw-bat or pounce in a play session
+
+// A scare drains the heart one gauge row at a time. Returns the index of
+// a row that just fell (0 = the first, each one a lower beep), or -1.
+int stats_take_scare_beep(void);
 
 // Streaks: consecutive days on which a gauge reached full at least once,
 // and whether it has already reached full today (today is not yet counted

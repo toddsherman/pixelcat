@@ -36,6 +36,7 @@ static volatile bool s_slurp_pending;
 static volatile bool s_swipe_pending;
 static volatile int s_dash_pending;  // 0 none, else direction
 static volatile int s_meow_pending;  // 0 none, else variant+1
+static volatile int s_beep_pending;  // 0 none, else scale step+1
 static volatile bool s_stop;
 
 static esp_err_t i2s_init(const audio_codec_data_if_t **data_if)
@@ -165,6 +166,9 @@ typedef struct {
     float meow_t;     // seconds into the meow, or -1
     float meow_ph;
     int meow_var;     // which candidate voice
+    float beep_t;     // seconds into the heart-drain beep, or -1
+    float beep_ph;
+    int beep_step;    // which rung of the descending scale
 } purr_state_t;
 
 static void fill_frame(purr_state_t *st, int16_t *out)
@@ -220,6 +224,12 @@ static void fill_frame(purr_state_t *st, int16_t *out)
         s_meow_pending = 0;
         st->meow_t = 0.0f;
         st->meow_ph = 0.0f;
+    }
+    if (s_beep_pending) {
+        st->beep_step = s_beep_pending - 1;
+        s_beep_pending = 0;
+        st->beep_t = 0.0f;
+        st->beep_ph = 0.0f;
     }
 
     for (int i = 0; i < AUDIO_FRAME_SAMPLES; i++) {
@@ -408,6 +418,27 @@ static void fill_frame(purr_state_t *st, int16_t *out)
             }
         }
 
+        // Heart-drain beep: a clean tone per gauge row lost, each rung of
+        // the scale lower than the last — the sound of love draining out.
+        if (st->beep_t >= 0.0f) {
+            static const float k_rungs[6] = {880.0f, 740.0f, 622.0f,
+                                             523.0f, 440.0f, 370.0f};
+            const float t = st->beep_t;
+            const float dur = 0.20f;
+            if (t < dur) {
+                const float u = t / dur;
+                st->beep_ph += TWO_PI * k_rungs[st->beep_step % 6] * dt;
+                // Quick attack, long fall — a soft electronic pip.
+                const float env = (u < 0.06f) ? (u / 0.06f)
+                                              : expf(-(u - 0.06f) * 5.0f);
+                s += 0.30f * env * (sinf(st->beep_ph) +
+                                    0.22f * sinf(2.0f * st->beep_ph));
+                st->beep_t += dt;
+            } else {
+                st->beep_t = -1.0f;
+            }
+        }
+
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         out[i] = (int16_t)(s * 30000.0f);
@@ -418,7 +449,8 @@ static bool synth_audible(const purr_state_t *st)
 {
     return st->level > 0.01f || st->chirp_t >= 0.0f || st->hiss_t >= 0.0f ||
            st->boing_t >= 0.0f || st->slurp_t >= 0.0f || st->swipe_t >= 0.0f ||
-           st->dash_t >= 0.0f || st->step_env > 0.01f || st->meow_t >= 0.0f;
+           st->dash_t >= 0.0f || st->step_env > 0.01f ||
+           st->meow_t >= 0.0f || st->beep_t >= 0.0f;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,7 +491,7 @@ static void purr_task(void *arg)
     (void)arg;
     static int16_t frame[AUDIO_FRAME_SAMPLES];
     static int16_t mic[AUDIO_FRAME_SAMPLES];
-    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f, .meow_t = -1.0f};
+    purr_state_t st = {.chirp_t = -1.0f, .hiss_t = -1.0f, .boing_t = -1.0f, .slurp_t = -1.0f, .swipe_t = -1.0f, .dash_t = -1.0f, .meow_t = -1.0f, .beep_t = -1.0f};
     float gate_hold = 0.0f;
     const float frame_s = (float)AUDIO_FRAME_SAMPLES / AUDIO_SAMPLE_RATE;
 
@@ -541,6 +573,11 @@ void audio_dash(int dir)
 void audio_meow(int variant)
 {
     s_meow_pending = (variant % 3) + 1;
+}
+
+void audio_beep(int step)
+{
+    s_beep_pending = ((step < 0) ? 0 : step % 6) + 1;
 }
 
 bool audio_take_sound(void)

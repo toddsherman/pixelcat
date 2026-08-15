@@ -309,6 +309,13 @@ static void cat_task(void *arg)
             stats_on_scare(cat_scare_level());
             stats_store_save();
         }
+        // The heart emptying, one row and one falling tone at a time.
+        {
+            const int beep = stats_take_scare_beep();
+            if (beep >= 0) {
+                audio_beep(beep);
+            }
+        }
         if (cat_take_step()) {
             audio_step();
         }

@@ -425,6 +425,38 @@ int main(void)
     expect(stats_get()->affection < 1.0f,
            "an ignored heart is empty within 5 minutes");
 
+    // --- A scare empties the heart one row at a time, a beep per row ---
+    stats_reset();
+    for (int i = 0; i < (int)(30.0f / DT); i++) {
+        stats_tick(DT, false, 0.9f);  // pet him to a full heart
+    }
+    expect(stats_get()->affection > 99.0f, "petting fills the heart");
+    stats_on_scare(1);
+    expect(stats_get()->affection > 99.0f, "the scare does not empty it at once");
+    int beeps = 0, steps_seen = 0, ordered = 1, whole_rows = 1;
+    float prev = stats_get()->affection, at_last_beep = -1.0f;
+    for (int i = 0; i < (int)(6.0f / DT); i++) {
+        stats_tick(DT, false, 0.9f);  // petting must not stop the drain
+        const int b = stats_take_scare_beep();
+        if (b >= 0) {
+            ordered &= (b == beeps);
+            beeps++;
+            whole_rows &= (stats_get()->affection < prev - 10.0f);
+            prev = stats_get()->affection;
+            at_last_beep = prev;
+        }
+        if (i == (int)(0.7f / DT)) {
+            steps_seen = (stats_get()->affection > 99.0f) ? 1 : 0;
+        }
+    }
+    expect(steps_seen, "the first row survives ~750 ms");
+    expect(ordered, "the beeps step down in order");
+    expect(whole_rows, "each beep drops a whole gauge row");
+    expect(beeps == STATS_GAUGE_ROWS, "one beep per gauge row");
+    expect(at_last_beep == 0.0f, "the last row leaves the heart empty");
+    expect(stats_get()->affection > 0.0f,
+           "petting works again once the drain is done");
+
     // --- His sleep completing rolls the episode ---
     stats_reset();
     stats_on_eat(100.0f);
