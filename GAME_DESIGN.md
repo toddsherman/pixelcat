@@ -86,8 +86,10 @@ Two distinct off-screen states:
 
 While he is off-screen, petting, tap-on-cat, leap zones, and **tilt** are
 all inert — tilt moves *him*, and he isn't there. The swipe camera exists
-only in the hiding state. Everything reactivates when he returns to
-centred behaviour.
+**only** while he hides; in normal centred behaviour sideways swipes never
+pan the camera — a stroke across him is petting, nothing else. The two
+control schemes are mutually exclusive by state, so no gesture is ever
+ambiguous. Everything reactivates when he returns to centred behaviour.
 
 ## Learning: he figures out your schedule
 
