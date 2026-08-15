@@ -321,6 +321,9 @@ static const struct {
 // A little text, drawn by the menus and the animation browser.
 static int draw_text(int x, int y, const char *str, uint8_t col);
 
+// The animation browser's voice, defined with the browser further down.
+static void anim_voice(void);
+
 // Behaviour tuning.
 #define SHAKE_HISS_THRESHOLD 6.5f
 #define RUN_ZONE_L (CANVAS_W / 3)
@@ -734,17 +737,72 @@ void cat_init(void)
     }
 }
 
+// The sounds an animation makes as its frames turn, emitted exactly once
+// per frame change. Shared with the animation browser, so testing a cycle
+// sounds like the real thing — minus the scoring, which would hand out free
+// play credit for watching.
+static void frame_sounds(void)
+{
+    const int frame = anim_frame();
+    if (frame != s.prev_frame) {
+        if ((s.mode == M_TROT || s.mode == M_ENTER) &&
+            (frame == 1 || frame == 5)) {
+            s.step = true;
+        }
+        if (s.mode == M_HIDDEN && (frame == 1 || frame == 5) &&
+            fabsf(world_delta(s.cam_x, s.world_x)) <
+                (CENTRE + SPRITE_W) * PIX_SCALE) {
+            s.step = true;  // soft footfalls when the search gets warm
+        }
+        if (s.mode == M_FLEE && frame == 0) {
+            s.dash = s.flee_dir;  // a whoosh per panicked leap
+        }
+        if ((s.mode == M_CLEAN_PAW || s.mode == M_CLEAN_EAR ||
+             s.mode == M_EAT) && frame == 1) {
+            s.slurp = true;
+        }
+        if (s.mode == M_PAWING && frame == 2) {
+            s.swipe = true;
+        }
+        if (s.mode == M_PLAY_PAW && frame == 2) {
+            // A bat connects: score it and send the ball rolling, usually
+            // forward, sometimes squirting back through his legs.
+            s.swipe = true;
+            if (!s.anim_browse) {
+                s.play_evt = true;
+            }
+            float dir = s.facing_left ? -1.0f : 1.0f;
+            if (frand01() < 0.2f) {
+                dir = -dir;
+            }
+            s.ball_vx = dir * (40.0f + 60.0f * frand01());
+        }
+        s.prev_frame = frame;
+    }
+
+}
+
 void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
 {
     if (s.anim_browse) {
-        // A cycle on display: let it play and nothing else.
+        // A cycle on display: it plays, and it sounds like itself.
         s.t += dt;
-        const int f = anim_frame();
-        if (f != s.prev_frame) {
-            s.prev_frame = f;
-        }
+        frame_sounds();
         if (anim_done()) {
-            s.t = 0.0f;  // loop the one-shots too, so they can be studied
+            s.t = 0.0f;      // loop the one-shots so they can be studied
+            s.prev_frame = -1;
+            anim_voice();    // and let them announce themselves again
+        }
+        // The two animations that carry a continuous voice.
+        const float target = (s.mode == M_PET)     ? 0.70f
+                             : (s.mode == M_SLEEP) ? 0.16f
+                                                   : 0.0f;
+        const float rate = (target > s.purr) ? PET_RAMP_UP : PET_RAMP_DOWN;
+        const float step = rate * dt;
+        if (fabsf(target - s.purr) <= step) {
+            s.purr = target;
+        } else {
+            s.purr += (target > s.purr) ? step : -step;
         }
         s.was_down = touch->down;
         return;
@@ -1335,41 +1393,7 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
         }
     }
 
-    // Frame-edge sound events, emitted exactly once per frame change.
-    const int frame = anim_frame();
-    if (frame != s.prev_frame) {
-        if ((s.mode == M_TROT || s.mode == M_ENTER) &&
-            (frame == 1 || frame == 5)) {
-            s.step = true;
-        }
-        if (s.mode == M_HIDDEN && (frame == 1 || frame == 5) &&
-            fabsf(world_delta(s.cam_x, s.world_x)) <
-                (CENTRE + SPRITE_W) * PIX_SCALE) {
-            s.step = true;  // soft footfalls when the search gets warm
-        }
-        if (s.mode == M_FLEE && frame == 0) {
-            s.dash = s.flee_dir;  // a whoosh per panicked leap
-        }
-        if ((s.mode == M_CLEAN_PAW || s.mode == M_CLEAN_EAR ||
-             s.mode == M_EAT) && frame == 1) {
-            s.slurp = true;
-        }
-        if (s.mode == M_PAWING && frame == 2) {
-            s.swipe = true;
-        }
-        if (s.mode == M_PLAY_PAW && frame == 2) {
-            // A bat connects: score it and send the ball rolling, usually
-            // forward, sometimes squirting back through his legs.
-            s.swipe = true;
-            s.play_evt = true;
-            float dir = s.facing_left ? -1.0f : 1.0f;
-            if (frand01() < 0.2f) {
-                dir = -dir;
-            }
-            s.ball_vx = dir * (40.0f + 60.0f * frand01());
-        }
-        s.prev_frame = frame;
-    }
+    frame_sounds();
 
     s.world_x = fmodf(fmodf(s.world_x, (float)BG_WORLD_W) + (float)BG_WORLD_W,
                       (float)BG_WORLD_W);
@@ -1706,10 +1730,9 @@ static void compose(void)
     }
 
     if (s.anim_browse) {
-        // Its name, and the way out, along the bottom.
-        const int x = draw_text(2, CANVAS_H - 6, k_anims[s.anim_sel].name,
-                                C_WHITE);
-        draw_text(x + 4, CANVAS_H - 6, "BOOT BACK", C_UI_DIM);
+        // Its name where the HUD would be, with the way out beneath.
+        draw_text(2, 1, k_anims[s.anim_sel].name, C_WHITE);
+        draw_text(2, 7, "BOOT BACK", C_UI_DIM);
         return;
     }
 
@@ -2039,6 +2062,17 @@ static void compose_test(void)
 // Browsing animations: the menu steps aside so the cycle can be watched in
 // the park itself, with its name along the bottom. PWR walks the list, BOOT
 // returns to the menu.
+// The noise a cycle opens with, for the ones that have one.
+static void anim_voice(void)
+{
+    switch (s.mode) {
+        case M_BIG_JUMP: s.boing = true; break;
+        case M_LEAP: s.dash = s.facing_left ? -1 : 1; break;
+        case M_ANGRY: s.hiss = true; break;
+        default: break;
+    }
+}
+
 static void anim_show(void)
 {
     s.cam_free = false;
@@ -2049,7 +2083,9 @@ static void anim_show(void)
     s.tilt_walk = false;
     s.tilt_leap = false;
     s.goal_kind = 0;
+    s.prev_frame = -1;
     enter(k_anims[s.anim_sel].mode);
+    anim_voice();
 }
 
 bool cat_test_is_open(void)
