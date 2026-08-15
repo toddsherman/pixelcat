@@ -196,11 +196,11 @@ static const char *const ICON_HEART[] = {
 };
 
 static const char *const ICON_EXER[] = {
-    "oo...oo",
-    "oo...oo",
-    "ooooooo",
-    "oo...oo",
-    "oo...oo",
+    ".oo...oo.",
+    "ooo...ooo",
+    "ooooooooo",
+    "ooo...ooo",
+    ".oo...oo.",
 };
 
 // Small overlay sprites are stamped unflipped with their own widths.
@@ -1040,6 +1040,16 @@ void cat_update(float dt, const cat_touch_t *touch, float shake, float tilt)
             break;
 
         case M_PET:
+            if (touch->down) {
+                // He turns toward the hand that pets him; the dead zone
+                // keeps a stroke across his middle from flip-flopping him.
+                const float centre_x = s.pos_x + SPRITE_W * 0.5f;
+                if (tx < centre_x - 2.0f) {
+                    s.facing_left = true;
+                } else if (tx > centre_x + 2.0f) {
+                    s.facing_left = false;
+                }
+            }
             if (s.hiding && s.purr > 0.55f && s.t > 1.2f) {
                 // An earned purr at the hiding spot: peace is made.
                 s.hiding = false;
