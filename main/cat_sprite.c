@@ -318,11 +318,16 @@ static const struct {
 };
 #define ANIM_COUNT ((int)(sizeof(k_anims) / sizeof(k_anims[0])))
 
+enum { B_SCARE = 0, B_SUMMON, B_AUDITION, B_SLEEP, B_BACK, B_COUNT };
+static const char *const k_behav_items[B_COUNT] = {
+    "SCARE HIM", "SUMMON", "AUDITION NOW", "SLEEP NOW", "BACK",
+};
+
 // Which test screen is showing, if any. The lists own the whole screen;
 // the two browsers overlay the park, because looking at the park is the
 // entire point of them.
 enum { TS_OFF = 0, TS_MAIN, TS_ANIM, TS_ICONS, TS_BEHAV, TS_MODEL };
-#define TS_IS_PAGE(v) ((v) == TS_MAIN || (v) == TS_BEHAV || (v) == TS_MODEL)
+#define TS_IS_PAGE(v) ((v) == TS_MAIN || (v) == TS_MODEL)
 
 // A little text, drawn by the menus and the animation browser.
 static int draw_text(int x, int y, const char *str, uint8_t col);
@@ -1641,8 +1646,10 @@ void cat_debug_force(int mode)
         s.screen = TS_ICONS;
         s.icon_fill = 50;
     } else if (mode == 55) {
+        s.cam_free = false;
+        enter(M_PORTRAIT);
         s.screen = TS_BEHAV;
-        s.test_sel = 1;
+        s.test_sel = 0;
         snprintf(s.dbg_line1, sizeof(s.dbg_line1), "SD30415M UP742S");
         snprintf(s.dbg_line2, sizeof(s.dbg_line2), "F0 E0");
     } else if (mode == 56) {
@@ -1768,17 +1775,22 @@ static void compose(void)
         }
     }
 
-    if (s.screen == TS_ANIM) {
-        // Its name where the HUD would be, with the way out beneath. On a
+    if (s.screen == TS_ANIM || s.screen == TS_BEHAV) {
+        // The name where the HUD would be, with the buttons beneath. On a
         // dark band, or it is illegible against a bright sky.
         for (int y = 0; y < 13; y++) {
             for (int x = 0; x < CANVAS_W; x++) {
                 px(x, y, C_BLACK);
             }
         }
-        draw_text(2, 1, k_anims[s.anim_sel].name, C_WHITE);
-        draw_text(2, 7, "BOOT BACK", C_UI_DIM);
-        return;
+        if (s.screen == TS_ANIM) {
+            draw_text(2, 1, k_anims[s.anim_sel].name, C_WHITE);
+            draw_text(2, 7, "BOOT BACK", C_UI_DIM);
+            return;
+        }
+        draw_text(2, 1, k_behav_items[s.test_sel], C_WHITE);
+        draw_text(2, 7, "BOOT DO", C_UI_DIM);
+        return;  // the HUD stays out of the way, as in the other browser
     }
     if (s.screen == TS_ICONS) {
         // The icons are the point, so the hint sits at the foot.
@@ -2079,10 +2091,6 @@ static const char *const k_main_items[M_ROW_COUNT] = {
     "AI MODEL", "EXIT MENU", "EXIT TEST",
 };
 
-enum { B_SCARE = 0, B_SUMMON, B_AUDITION, B_SLEEP, B_BACK, B_COUNT };
-static const char *const k_behav_items[B_COUNT] = {
-    "SCARE HIM", "SUMMON", "AUDITION NOW", "SLEEP NOW", "BACK",
-};
 
 enum { A_FORGET = 0, A_BACK, A_COUNT };
 static const char *const k_model_items[A_COUNT] = {"FORGET ALL", "BACK"};
@@ -2135,11 +2143,6 @@ static void menu_chrome(const char *title)
 static void compose_test(void)
 {
     switch (s.screen) {
-        case TS_BEHAV:
-            menu_chrome("BEHAVIOURS");
-            draw_list(k_behav_items, B_COUNT, s.test_sel, -1, 24);
-            return;
-
         case TS_MODEL: {
             menu_chrome("AI MODEL");
             // What he has learned, in the plainest terms available.
@@ -2172,6 +2175,7 @@ static void compose_test(void)
 
         case TS_ICONS:
         case TS_ANIM:
+        case TS_BEHAV:
             return;  // these draw over the park, not on their own screen
 
         default:

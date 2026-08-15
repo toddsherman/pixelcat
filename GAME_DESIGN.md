@@ -63,8 +63,9 @@ is the HUD. No navigation state, no open/close.
   - **Icons** — every gauge on screen at once, filling a row per press, so
     the icon art can be seen at each level. It sets the real gauges, which
     is why there is no separate fill-and-empty.
-  - **Behaviours** — scare him, summon or banish him, force an audition,
-    sleep now.
+  - **Behaviours** — like the animation browser, over the park: PWR walks
+    scare him, summon or banish him, force an audition, sleep now, and
+    BOOT does the one named.
   - **AI model** — what he has learned in plain words: sessions and days,
     whether he is still too green to wake you, the hour he most expects
     company, his wake record, the bar he has set himself and which opening
