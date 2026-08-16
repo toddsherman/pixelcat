@@ -33,3 +33,7 @@ esp_err_t display_power_off(void);
 
 // Sleep-out + display on: undoes display_power_off() without re-running init.
 esp_err_t display_power_on(void);
+
+// Diagnostics: transfers queued OK, transfers refused, and free band buffers
+// (0 means every buffer is still in flight — completions have stopped).
+void display_stats(uint32_t *ok, uint32_t *err, int *free_slots);

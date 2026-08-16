@@ -55,6 +55,10 @@ static const char *TAG = "pixelcat";
 // there is a cable to read it over. Set to 0 when the question is settled.
 #define BATTERY_DEBUG 1
 
+// Reproduce the doze/wake cycle on the bench: doze at 20 s, wake at 35 s, so
+// the freeze can be caught over the cable rather than by hand. 0 = off.
+#define DOZE_SELFTEST 0
+
 static i2c_master_bus_handle_t s_i2c_bus;
 
 static esp_err_t i2c_init(void)
@@ -512,6 +516,22 @@ static void cat_task(void *arg)
             cat_render();
         }
 
+#if DOZE_SELFTEST
+        {
+            const int64_t up = now / 1000000;
+            static int st_stage;
+            if (st_stage == 0 && up >= 20) {
+                st_stage = 1;
+                ESP_LOGW(TAG, "selftest: forcing doze");
+                power_sleep_now();
+            } else if (st_stage == 1 && up >= 35) {
+                st_stage = 2;
+                ESP_LOGW(TAG, "selftest: forcing wake");
+                power_wake_screen();
+                power_note_activity();
+            }
+        }
+#endif
         power_idle_check();
 
         // A doze-time proactive fire lands here rather than through a reboot.
@@ -685,11 +705,15 @@ static void cat_task(void *arg)
             imu_gravity(g);
             int st1, st2;
             battery_raw(&st1, &st2);
+            uint32_t tx_ok, tx_err;
+            int tx_free;
+            display_stats(&tx_ok, &tx_err, &tx_free);
             const stats_t *st = stats_get();
             float mic_rms, mic_amb;
             audio_mic_levels(&mic_rms, &mic_amb);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt %d%% %dmV st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d PL %d S %d | mic %.3f amb %.3f | fear %d%s",
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d tx %u/%u free %d | grav %.1f %.1f %.1f tilt %.1f | batt %d%% %dmV st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d PL %d S %d | mic %.3f amb %.3f | fear %d%s",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
+                     tx_ok, tx_err, tx_free,
                      (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(),
                      batt_pct, battery_millivolts(), st1, st2,
                      pcf_minutes_of_day(), daypart_for_log,

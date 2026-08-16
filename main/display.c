@@ -221,10 +221,31 @@ uint16_t *display_acquire_band(void)
     return s_band_buf[next++ & 1];
 }
 
+static uint32_t s_tx_ok, s_tx_err;
+
 esp_err_t display_flush_band(int band_index, const uint16_t *buffer)
 {
     const int y0 = band_index * BAND_ROWS;
-    return esp_lcd_panel_draw_bitmap(s_panel, 0, y0, LCD_H_RES, y0 + BAND_ROWS, buffer);
+    const esp_err_t ret = esp_lcd_panel_draw_bitmap(
+        s_panel, 0, y0, LCD_H_RES, y0 + BAND_ROWS, buffer);
+    if (ret == ESP_OK) {
+        s_tx_ok++;
+    } else {
+        s_tx_err++;
+    }
+    return ret;
+}
+
+// Transfers queued, transfers refused, and how many band buffers are free.
+// A frozen screen with a rising ok-count means the panel is ignoring good
+// data; a stalled count means we stopped sending it. The free-slot count
+// catches the third case, where the completion callbacks stopped arriving
+// and acquire is blocking forever on a semaphore nobody will give back.
+void display_stats(uint32_t *ok, uint32_t *err, int *free_slots)
+{
+    *ok = s_tx_ok;
+    *err = s_tx_err;
+    *free_slots = (int)uxSemaphoreGetCount(s_buffers_free);
 }
 
 // A panel command, framed the way this panel actually expects.
@@ -245,30 +266,19 @@ static esp_err_t panel_cmd(int cmd, const void *data, size_t len)
     return esp_lcd_panel_io_tx_param(s_io, framed, data, len);
 }
 
-// Undo display_power_off() by replaying the whole init list, not just the
-// sleep-out and display-on at the end of it.
+// Wake: display on. Nothing else, because nothing else was taken away.
 //
-// Sleep-in resets the panel's display-control registers, and the ones that
-// matter are set *before* those two: 0x51 is the brightness (0xFF), 0x53
-// enables brightness control at all, 0x3A is the pixel format, 0x2A/0x2B are
-// the address window. Waking with only 0x11 and 0x29 gives a panel that is
-// genuinely on and accepts every transfer without error — at zero brightness.
-// The flush counter stays clean and the screen stays dark, which is a
-// miserable thing to debug. Replaying the list keeps this correct by
-// construction if the sequence ever changes.
+// This used to sleep the panel (0x10) and then rebuild it by replaying the
+// init list. The panel came back lit and then never updated again: every
+// transfer was queued and accepted -- tx_err stayed 0 and the queue rate was
+// unchanged -- and the picture simply stopped. Re-initialising a live panel
+// by hand is not something the controller expects, and it is not something
+// this needs to do. Display-off already blanks every pixel on an AMOLED,
+// which is the whole point of the exercise, and GRAM survives it, so
+// display-on brings the picture straight back with no state to restore.
 esp_err_t display_power_on(void)
 {
-    for (size_t i = 0; i < sizeof(s_init_cmds) / sizeof(s_init_cmds[0]); i++) {
-        const co5300_lcd_init_cmd_t *c = &s_init_cmds[i];
-        const esp_err_t ret = panel_cmd(c->cmd, c->data, c->data_bytes);
-        if (ret != ESP_OK) {
-            return ret;
-        }
-        if (c->delay_ms) {
-            vTaskDelay(pdMS_TO_TICKS(c->delay_ms));
-        }
-    }
-    return ESP_OK;
+    return panel_cmd(0x29, NULL, 0);
 }
 
 esp_err_t display_power_off(void)
@@ -281,12 +291,9 @@ esp_err_t display_power_off(void)
     xSemaphoreGive(s_buffers_free);
 
     // Display off, then sleep-in: the panel drops to microamps.
-    esp_err_t ret = panel_cmd(0x28, NULL, 0);  // display off
-    if (ret == ESP_OK) {
-        ret = panel_cmd(0x10, NULL, 0);  // sleep in
-    }
-    vTaskDelay(pdMS_TO_TICKS(120));
-    return ret;
+    // Display off only: see display_power_on() for why sleep-in is not worth
+    // what it costs. Every pixel is dark either way.
+    return panel_cmd(0x28, NULL, 0);
 }
 
 esp_err_t display_set_brightness(uint8_t level)

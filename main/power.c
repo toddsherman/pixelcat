@@ -143,7 +143,7 @@ void power_wake_screen(void)
     audio_set_muted(false);
     display_power_on();
     power_note_activity();
-    ESP_LOGW(TAG, "screen back on (panel re-inited)");
+    ESP_LOGW(TAG, "screen back on");
 }
 
 void power_idle_check(void)
