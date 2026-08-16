@@ -56,3 +56,7 @@ void logbook_forget(void);
 // and a crash leave the same reset reason; the charge is what separates them.
 // Pass -1 when the gauge cannot be read.
 void logbook_mark_uptime(int batt_pct);
+
+// Print the tail of boots.csv to the console — the power/crash history, which
+// otherwise only exists on the card.
+void logbook_dump_boots(int lines);

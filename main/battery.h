@@ -14,3 +14,10 @@ bool battery_read(int *percent, bool *charging);
 
 // Raw status registers from the last successful read, for diagnostics.
 void battery_raw(int *status1, int *status2);
+
+// Log the AXP2101's charger configuration and battery voltage, for working
+// out why a cell is not charging.
+void battery_dump(void);
+
+// Cell terminal voltage in mV, or -1 if unreadable.
+int battery_millivolts(void);

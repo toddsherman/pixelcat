@@ -40,6 +40,15 @@ static const char *TAG = "pixelcat";
 // assumption that there may not be a later chance.
 #define LOW_BATT_PCT 12
 
+// And the voltage at which he stops rather than browns out. Left to itself
+// this board runs the AMOLED until the cell collapses, resets, and does it
+// again — the boot log has fourteen consecutive power_on resets from one
+// such night, which is both a dead battery and a cell being deep-cycled to
+// death. Voltage rather than the fuel gauge decides: the gauge reads far
+// lower than the cell measures and cannot be trusted with this.
+#define CUTOFF_MV 3450
+#define CUTOFF_SAMPLES 2  // consecutive 5 s reads, so one sag cannot trip it
+
 static i2c_master_bus_handle_t s_i2c_bus;
 
 static esp_err_t i2c_init(void)
@@ -183,6 +192,7 @@ static void cat_task(void *arg)
     int64_t last_mark_us = 0;
     int batt_pct = -1;
     bool low_saved = false;
+    int low_volt = 0;
     int daypart_for_log = 0;
 
     if (s_pending_arm >= 0) {
@@ -484,6 +494,28 @@ static void cat_task(void *arg)
                 } else if (pct > LOW_BATT_PCT + 5) {
                     low_saved = false;
                 }
+
+                // The cutoff. On battery, a cell this low cannot hold the
+                // panel up much longer; stopping deliberately beats being
+                // stopped by a brownout, and the sleep loop already wakes
+                // again the moment USB power appears.
+                const int mv = battery_millivolts();
+                if (!chg && mv > 0 && mv <= CUTOFF_MV) {
+                    if (++low_volt >= CUTOFF_SAMPLES) {
+                        ESP_LOGW(TAG,
+                                 "battery %d mV (gauge %d%%): shutting down "
+                                 "before the brownout does it for us",
+                                 mv, pct);
+                        stats_store_save();
+                        model_store_save();
+                        logbook_add(LOG_BOOT, -1, mv);
+                        logbook_mark_uptime(pct);
+                        logbook_flush();
+                        power_sleep_now();  // next idle check sleeps for real
+                    }
+                } else {
+                    low_volt = 0;
+                }
             }
             stats_set_trust(cat_scare_level(), cat_wary());
 
@@ -577,9 +609,10 @@ static void cat_task(void *arg)
             const stats_t *st = stats_get();
             float mic_rms, mic_amb;
             audio_mic_levels(&mic_rms, &mic_amb);
-            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d PL %d S %d | mic %.3f amb %.3f | fear %d%s",
+            ESP_LOGI(TAG, "state %d purr %.2f touch %d (%d,%d) flush_err %d | grav %.1f %.1f %.1f tilt %.1f | batt %d%% %dmV st1 %02x st2 %02x | clock %d part %d | F %d A %d X %d PL %d S %d | mic %.3f amb %.3f | fear %d%s",
                      (int)cat_state(), (double)cat_purr_level(), (int)ts.down, ts.x, ts.y, cat_flush_errors(),
-                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(), st1, st2,
+                     (double)g[0], (double)g[1], (double)g[2], (double)imu_tilt_x(),
+                     batt_pct, battery_millivolts(), st1, st2,
                      pcf_minutes_of_day(), daypart_for_log,
                      (int)st->food, (int)st->affection, (int)st->exercise,
                      (int)st->play, (int)st->sleep,

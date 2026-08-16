@@ -290,6 +290,41 @@ void logbook_note_boot(void)
     ESP_LOGI(TAG, "card: events %ld B, boots %ld B, log %ld B", ev, bo, lg);
 }
 
+// Print the tail of the boot log to the console. The card is the only place
+// this history survives, and until now there was no way to read it back
+// without pulling the card out of the device.
+void logbook_dump_boots(int lines)
+{
+    if (!sdcard_ready()) {
+        ESP_LOGW(TAG, "no card; no boot history");
+        return;
+    }
+    FILE *f = fopen(BOOTS_PATH, "r");
+    if (!f) {
+        ESP_LOGW(TAG, "no %s", BOOTS_PATH);
+        return;
+    }
+    // Ring of line offsets, so only the tail is held in memory.
+    enum { KEEP = 24 };
+    if (lines > KEEP) {
+        lines = KEEP;
+    }
+    static char ring[KEEP][96];
+    int n = 0;
+    while (fgets(ring[n % KEEP], sizeof(ring[0]), f)) {
+        n++;
+    }
+    fclose(f);
+    const int first = (n > lines) ? n - lines : 0;
+    ESP_LOGW(TAG, "--- last %d of %d boots (epoch,reason,ran_s,batt%%) ---",
+             n - first, n);
+    for (int i = first; i < n; i++) {
+        char *s = ring[i % KEEP];
+        s[strcspn(s, "\r\n")] = '\0';
+        ESP_LOGW(TAG, "  %s", s);
+    }
+}
+
 // Called from the flush timer: remember how long this run has lasted and how
 // much charge was left, so the next boot can report both even if this one
 // ends without warning. Pass -1 for an unreadable gauge.
