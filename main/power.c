@@ -143,7 +143,7 @@ void power_wake_screen(void)
     audio_set_muted(false);
     display_power_on();
     power_note_activity();
-    ESP_LOGI(TAG, "screen back on");
+    ESP_LOGW(TAG, "screen back on (panel re-inited)");
 }
 
 void power_idle_check(void)
@@ -167,7 +167,7 @@ void power_idle_check(void)
             s_dozing = true;
             audio_set_muted(true);
             display_power_off();
-            ESP_LOGI(TAG, "idle %ds: screen off, staying awake on USB",
+            ESP_LOGW(TAG, "idle %ds: screen off, staying awake on USB",
                      POWER_IDLE_S);
         }
         // Still his schedule to keep. A fire here does not restart the
@@ -181,7 +181,7 @@ void power_idle_check(void)
         return;
     }
 
-    ESP_LOGI(TAG, "idle %ds: sleeping (BOOT or PWR wakes)", POWER_IDLE_S);
+    ESP_LOGW(TAG, "idle %ds: sleeping (BOOT or PWR wakes)", POWER_IDLE_S);
     // The wake path is esp_restart, so persist the cat before going dark;
     // boot-time offline catch-up then covers however long the nap lasts.
     stats_apply_offline();
@@ -233,7 +233,7 @@ void power_idle_check(void)
 
         if (slept == ESP_OK &&
             esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) {
-            ESP_LOGI(TAG, "woken by BOOT");
+            ESP_LOGW(TAG, "woken by BOOT");
             break;
         }
         // Raw fallbacks cover the sleep-rejected path (e.g. USB active) and
@@ -243,7 +243,7 @@ void power_idle_check(void)
             break;
         }
         if (button_pressed_raw()) {
-            ESP_LOGI(TAG, "woken by PWR");
+            ESP_LOGW(TAG, "woken by PWR");
             break;
         }
         // A finger on the glass wakes him, charging or not.
@@ -251,7 +251,7 @@ void power_idle_check(void)
         if (s_sim_secs <= 0) {
             touch_state_t tsl;
             if (touch_read(&tsl) && tsl.down) {
-                ESP_LOGI(TAG, "woken by touch");
+                ESP_LOGW(TAG, "woken by touch");
                 break;
             }
         }
@@ -261,7 +261,7 @@ void power_idle_check(void)
         if (s_sim_secs <= 0) {
             if (imu_delta() > WAKE_MOTION_MSS) {
                 if (++moved >= WAKE_MOTION_SLICES) {
-                    ESP_LOGI(TAG, "woken by movement");
+                    ESP_LOGW(TAG, "woken by movement");
                     break;
                 }
             } else {
@@ -276,7 +276,7 @@ void power_idle_check(void)
             bool now_plugged;
             if (battery_read(&pct, &now_plugged)) {
                 if (now_plugged && !was_plugged) {
-                    ESP_LOGI(TAG, "woken by USB power");
+                    ESP_LOGW(TAG, "woken by USB power");
                     break;
                 }
                 was_plugged = now_plugged;

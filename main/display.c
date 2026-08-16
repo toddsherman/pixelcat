@@ -227,16 +227,31 @@ esp_err_t display_flush_band(int band_index, const uint16_t *buffer)
     return esp_lcd_panel_draw_bitmap(s_panel, 0, y0, LCD_H_RES, y0 + BAND_ROWS, buffer);
 }
 
-// Sleep-out then display-on: the two commands from the init sequence that
-// undo display_power_off(), without touching the rest of the panel setup.
+// Undo display_power_off() by replaying the whole init list, not just the
+// sleep-out and display-on at the end of it.
+//
+// Sleep-in resets the panel's display-control registers, and the ones that
+// matter are set *before* those two: 0x51 is the brightness (0xFF), 0x53
+// enables brightness control at all, 0x3A is the pixel format, 0x2A/0x2B are
+// the address window. Waking with only 0x11 and 0x29 gives a panel that is
+// genuinely on and accepts every transfer without error — at zero brightness.
+// The flush counter stays clean and the screen stays dark, which is a
+// miserable thing to debug. Replaying the list keeps this correct by
+// construction if the sequence ever changes.
 esp_err_t display_power_on(void)
 {
-    esp_err_t ret = esp_lcd_panel_io_tx_param(s_io, 0x11, NULL, 0);
-    if (ret != ESP_OK) {
-        return ret;
+    for (size_t i = 0; i < sizeof(s_init_cmds) / sizeof(s_init_cmds[0]); i++) {
+        const co5300_lcd_init_cmd_t *c = &s_init_cmds[i];
+        const esp_err_t ret = esp_lcd_panel_io_tx_param(
+            s_io, c->cmd, c->data, c->data_bytes);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        if (c->delay_ms) {
+            vTaskDelay(pdMS_TO_TICKS(c->delay_ms));
+        }
     }
-    vTaskDelay(pdMS_TO_TICKS(120));  // the panel needs it after sleep-out
-    return esp_lcd_panel_io_tx_param(s_io, 0x29, NULL, 0);
+    return ESP_OK;
 }
 
 esp_err_t display_power_off(void)

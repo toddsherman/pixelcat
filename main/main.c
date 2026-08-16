@@ -523,7 +523,7 @@ static void cat_task(void *arg)
                 // screen, cat, sound — stopped at once.
                 if (plugged_before < 0 || (chg ? 1 : 0) != plugged_before) {
                     if (plugged_before >= 0) {
-                        ESP_LOGI(TAG, "power source changed: now on %s",
+                        ESP_LOGW(TAG, "power source changed: now on %s",
                                  chg ? "USB" : "battery");
                         power_wake_screen();
                         power_note_activity();
