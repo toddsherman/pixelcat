@@ -201,6 +201,7 @@ static void cat_task(void *arg)
     int low_volt = 0;
     int64_t last_bsamp_us = 0;
     int64_t settle_since_us = 0;
+    int plugged_before = -1;  // -1 until the first reading
     int daypart_for_log = 0;
 
     if (s_pending_arm >= 0) {
@@ -514,6 +515,21 @@ static void cat_task(void *arg)
             bool chg;
             if (battery_read(&pct, &chg)) {
                 cat_set_battery(pct, chg);
+                // Plugging in or unplugging is a hand on the device, so it
+                // counts as activity. Without this, pulling the cable on a
+                // dozing cat dropped it straight into sleep: the idle
+                // countdown had already been spent dozing, so the sleep
+                // branch fired on the very next tick and everything —
+                // screen, cat, sound — stopped at once.
+                if (plugged_before < 0 || (chg ? 1 : 0) != plugged_before) {
+                    if (plugged_before >= 0) {
+                        ESP_LOGI(TAG, "power source changed: now on %s",
+                                 chg ? "USB" : "battery");
+                        power_wake_screen();
+                        power_note_activity();
+                    }
+                    plugged_before = chg ? 1 : 0;
+                }
                 batt_pct = pct;
                 int st1_s, st2_s;
                 battery_raw(&st1_s, &st2_s);

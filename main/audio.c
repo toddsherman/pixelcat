@@ -535,10 +535,11 @@ static volatile bool s_muted;
 
 void audio_set_muted(bool on)
 {
+    // Just a flag: the gates below make every voice silent while it is set.
+    // Emphatically NOT audio_stop(), which closes the codec and ends the
+    // synth task — there is no matching open, so muting that way would leave
+    // the cat permanently mute the moment he was woken again.
     s_muted = on;
-    if (on) {
-        audio_stop();
-    }
 }
 
 void audio_set_purr(float intensity)
