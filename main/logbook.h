@@ -60,3 +60,11 @@ void logbook_mark_uptime(int batt_pct);
 // Print the tail of boots.csv to the console — the power/crash history, which
 // otherwise only exists on the card.
 void logbook_dump_boots(int lines);
+
+// Battery telemetry to the card: one line per sample, appended immediately so
+// the readings just before a collapse survive it. This is how the fuel
+// gauge's percentage gets checked against the cell's actual voltage over a
+// full charge and discharge, which cannot be watched over USB — unplugging is
+// the experiment.
+void logbook_battery_sample(int pct, int mv, int st1, int st2);
+void logbook_dump_battery(int lines);

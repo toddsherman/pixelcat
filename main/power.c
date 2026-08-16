@@ -147,6 +147,7 @@ void power_idle_check(void)
     // The PWR button lives behind the I2C expander (the AXP2101 IRQ line is
     // not routed on this board), so wake for ~1 ms every 300 ms to poll it.
     int slices = 0;
+    int batt_slices = 0;
     const int64_t slept_at = esp_timer_get_time();
     for (;;) {
         // A rehearsal: wake on the clock and pretend the model asked.
@@ -183,9 +184,20 @@ void power_idle_check(void)
         if ((slices % 20) == 19 && s_sim_secs <= 0) {
             int pct;
             bool plugged;
-            if (battery_read(&pct, &plugged) && plugged) {
-                ESP_LOGI(TAG, "woken by USB power");
-                break;
+            if (battery_read(&pct, &plugged)) {
+                if (plugged) {
+                    ESP_LOGI(TAG, "woken by USB power");
+                    break;
+                }
+                // Most of a discharge happens right here, asleep. Sampling
+                // only while awake would miss the part of the curve the
+                // question is actually about. Every ~5 min of sleep.
+                if (++batt_slices >= 50) {
+                    batt_slices = 0;
+                    int s1, s2;
+                    battery_raw(&s1, &s2);
+                    logbook_battery_sample(pct, battery_millivolts(), s1, s2);
+                }
             }
         }
         // Every ~20 s of sleep, let the schedule model consider waking him.

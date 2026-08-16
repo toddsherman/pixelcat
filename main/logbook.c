@@ -19,6 +19,7 @@ static const char *TAG = "logbook";
 #define EVENTS_PATH SDCARD_DIR "/events.csv"
 #define BOOTS_PATH SDCARD_DIR "/boots.csv"
 #define LOG_PATH SDCARD_DIR "/log.txt"
+#define BATT_PATH SDCARD_DIR "/battery.csv"
 #define LOG_OLD_PATH SDCARD_DIR "/log.old.txt"
 
 // Two generations of console log, capped, so a chatty fault cannot fill a
@@ -288,6 +289,61 @@ void logbook_note_boot(void)
     long bo = (stat(BOOTS_PATH, &st) == 0) ? (long)st.st_size : -1;
     long lg = (stat(LOG_PATH, &st) == 0) ? (long)st.st_size : -1;
     ESP_LOGI(TAG, "card: events %ld B, boots %ld B, log %ld B", ev, bo, lg);
+}
+
+// One sample of what the battery is doing, appended immediately rather than
+// buffered. Buffering would lose exactly the samples that matter: the last
+// few before the cell collapses, which is the shape of the question.
+void logbook_battery_sample(int pct, int mv, int st1, int st2)
+{
+    if (!sdcard_ready()) {
+        return;
+    }
+    FILE *f = fopen(BATT_PATH, "a");
+    if (!f) {
+        return;
+    }
+    // chg: the PMU's own charge state (2 = constant current, 4 = done,
+    // 5 = not charging), so a discharge run is separable from a charge run.
+    fprintf(f, "%lld,%llu,%d,%d,%02X,%02X,%d\n", (long long)now_epoch(),
+            (unsigned long long)(esp_timer_get_time() / 1000000), pct, mv,
+            (unsigned)st1 & 0xFF, (unsigned)st2 & 0xFF, st2 & 0x07);
+    fclose(f);
+}
+
+// The battery history, newest `lines` of it, straight to the console. Printed
+// rather than logged so it does not also land in log.txt.
+void logbook_dump_battery(int lines)
+{
+    if (!sdcard_ready()) {
+        ESP_LOGW(TAG, "no card; no battery history");
+        return;
+    }
+    FILE *f = fopen(BATT_PATH, "r");
+    if (!f) {
+        ESP_LOGW(TAG, "no %s yet", BATT_PATH);
+        return;
+    }
+    // Two passes: count, then print from the right offset. Keeps a long
+    // history off a stack that has no room for it.
+    int total = 0;
+    char line[96];
+    while (fgets(line, sizeof(line), f)) {
+        total++;
+    }
+    const int first = (lines > 0 && total > lines) ? total - lines : 0;
+    rewind(f);
+    printf("\n--BATT-BEGIN total=%d from=%d "
+           "cols=epoch,uptime_s,pct,mv,st1,st2,chgstate\n", total, first);
+    int i = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (i++ >= first) {
+            fputs(line, stdout);
+        }
+    }
+    fclose(f);
+    printf("--BATT-END\n");
+    fflush(stdout);
 }
 
 // Print the tail of the boot log to the console. The card is the only place

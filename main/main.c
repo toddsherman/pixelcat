@@ -49,6 +49,12 @@ static const char *TAG = "pixelcat";
 #define CUTOFF_MV 3450
 #define CUTOFF_SAMPLES 2  // consecutive 5 s reads, so one sag cannot trip it
 
+// While the fuel gauge is under investigation: print the battery history on
+// every boot. Plugging in is what ends a discharge run, and plugging in is
+// also what reboots the board, so this lands the data at exactly the moment
+// there is a cable to read it over. Set to 0 when the question is settled.
+#define BATTERY_DEBUG 1
+
 static i2c_master_bus_handle_t s_i2c_bus;
 
 static esp_err_t i2c_init(void)
@@ -193,6 +199,7 @@ static void cat_task(void *arg)
     int batt_pct = -1;
     bool low_saved = false;
     int low_volt = 0;
+    int64_t last_bsamp_us = 0;
     int daypart_for_log = 0;
 
     if (s_pending_arm >= 0) {
@@ -476,6 +483,8 @@ static void cat_task(void *arg)
             if (battery_read(&pct, &chg)) {
                 cat_set_battery(pct, chg);
                 batt_pct = pct;
+                int st1_s, st2_s;
+                battery_raw(&st1_s, &st2_s);
                 // Below this, the next brownout could be the last thing that
                 // happens, and a five-minute save timer is no use to a board
                 // that is about to go dark. Get the cat and the model onto
@@ -493,6 +502,15 @@ static void cat_task(void *arg)
                     }
                 } else if (pct > LOW_BATT_PCT + 5) {
                     low_saved = false;
+                }
+
+                // One line a minute to the card, awake or asleep, so the
+                // gauge's percentage can be plotted against the cell's real
+                // voltage across a whole cycle.
+                if (now - last_bsamp_us > 60 * 1000000LL) {
+                    last_bsamp_us = now;
+                    logbook_battery_sample(pct, battery_millivolts(), st1_s,
+                                           st2_s);
                 }
 
                 // The cutoff. On battery, a cell this low cannot hold the
@@ -691,6 +709,9 @@ void app_main(void)
         s_pending_arm = -1;
     }
     logbook_note_boot();
+#if BATTERY_DEBUG
+    logbook_dump_battery(400);
+#endif
 
     // Load the park for whatever hour it is. The clock may still be at the
     // epoch this early; daylight is the safe opening guess and the loader
