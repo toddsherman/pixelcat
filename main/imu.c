@@ -121,3 +121,37 @@ float imu_shake(void)
     s_shake += ks * (mag - s_shake);
     return s_shake;
 }
+
+// How far the acceleration vector has moved since the previous call, in
+// m/s^2. Deliberately separate from imu_shake(): that one's attack/release
+// constants assume ~30 Hz sampling and go strange at the sleep loop's 300 ms.
+// This is memoryless — just a difference between consecutive reads — which is
+// the right shape for "has anyone picked this up?". Returns 0 on the first
+// call and on I2C failure, and keeps its own baseline so it never disturbs
+// the awake path's smoothing.
+float imu_delta(void)
+{
+    static float prev[3];
+    static bool primed;
+
+    if (!s_ready) {
+        return 0.0f;
+    }
+    qmi8658_data_t d;
+    if (qmi8658_read_sensor_data(&s_dev, &d) != ESP_OK) {
+        return 0.0f;
+    }
+    const float a[3] = {d.accelX, d.accelY, d.accelZ};
+    float mag2 = 0.0f;
+    if (primed) {
+        for (int i = 0; i < 3; i++) {
+            const float diff = a[i] - prev[i];
+            mag2 += diff * diff;
+        }
+    }
+    for (int i = 0; i < 3; i++) {
+        prev[i] = a[i];
+    }
+    primed = true;
+    return sqrtf(mag2);
+}

@@ -200,6 +200,7 @@ static void cat_task(void *arg)
     bool low_saved = false;
     int low_volt = 0;
     int64_t last_bsamp_us = 0;
+    int64_t settle_since_us = 0;
     int daypart_for_log = 0;
 
     if (s_pending_arm >= 0) {
@@ -470,8 +471,20 @@ static void cat_task(void *arg)
             cat_set_streaks(streaks, hits);
         }
 
+        // Release the hold as soon as the right park is up — or after a
+        // moment regardless. A dark screen is the worst failure this thing
+        // has, and it should never be reachable by waiting for something
+        // that is not coming: better a brief wrong sky than a dead device.
         if (world_is_resident(daypart_for_log)) {
             cat_set_settling(false);
+            settle_since_us = 0;
+        } else if (settle_since_us == 0) {
+            settle_since_us = now;
+        } else if (now - settle_since_us > 3000000) {
+            ESP_LOGW(TAG, "park %d still not resident after 3 s; showing "
+                          "the screen anyway", daypart_for_log);
+            cat_set_settling(false);
+            settle_since_us = 0;
         }
 
         cat_render();

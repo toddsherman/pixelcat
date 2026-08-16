@@ -7,6 +7,8 @@
 #include "button.h"
 #include "config.h"
 #include "display.h"
+#include "imu.h"
+#include "touch.h"
 #include "logbook.h"
 #include "model.h"
 #include "stats.h"
@@ -23,6 +25,22 @@
 #define POWER_IDLE_S 60
 #define BOOT_BUTTON GPIO_NUM_0
 #define POLL_US 300000
+
+// He sleeps on USB power too, so the wake cycle he has learned actually runs
+// while the device sits on a desk charging — which is where it mostly lives.
+//
+// The cost is real and worth knowing: light sleep suspends the USB serial
+// peripheral, so a sleeping board vanishes from /dev and cannot be flashed
+// until something wakes it. Touch the screen or pick it up first. Set this to
+// 0 to get the old docked-means-awake behaviour back during heavy debugging.
+#define SLEEP_ON_USB 1
+
+// Wake on being handled, not just on buttons. Neither touch nor the IMU has
+// an interrupt line routed on this board, so both are polled in the same
+// 300 ms slice that already polls the PWR button over I2C.
+#define WAKE_TOUCH 1
+#define WAKE_MOTION_MSS 2.0f  // vector change that counts as a deliberate move
+#define WAKE_MOTION_SLICES 2  // consecutive, so a desk bump is not enough
 
 static const char *TAG = "power";
 
@@ -75,8 +93,15 @@ static bool proactive_check(void)
         return false;  // no trustworthy clock, no predictions
     }
     int pct = -1;
-    bool chg;
+    bool chg = false;
     battery_read(&pct, &chg);
+    // The 30% floor exists to stop him spending a nearly flat battery on
+    // guesses. Plugged in there is nothing to conserve, so the floor is
+    // waived — which also keeps a badly-reading fuel gauge from silencing
+    // him permanently on a desk. -1 is the "don't check" value.
+    if (chg) {
+        pct = -1;
+    }
     const int minutes = lt.tm_hour * 60 + lt.tm_min;
     const int bucket = model_bucket(lt.tm_wday, minutes);
     const int32_t day_serial = (lt.tm_year + 1900) * 10000 +
@@ -102,18 +127,21 @@ void power_idle_check(void)
         return;
     }
 
-    // On USB power there is nothing to save and everything to lose (light
-    // sleep pauses the USB serial port, which makes the board hard to flash
-    // and debug). Docked means awake — and an unreadable fuel gauge must
-    // fail the same way, or one glitched I2C read puts a plugged-in board
-    // to sleep and takes the serial port with it. A rehearsal overrides
-    // this on purpose: it was asked for.
-    int pct;
-    bool plugged;
-    if (s_sim_secs <= 0 && (!battery_read(&pct, &plugged) || plugged)) {
+    // Whether USB is in decides nothing about sleeping any more — only what
+    // counts as waking, below. An unreadable fuel gauge no longer forces the
+    // board awake either; the wake sources cover it.
+    int pct = -1;
+    bool plugged = false;
+    if (!battery_read(&pct, &plugged)) {
+        pct = -1;
+        plugged = false;
+    }
+#if !SLEEP_ON_USB
+    if (s_sim_secs <= 0 && plugged) {
         power_note_activity();
         return;
     }
+#endif
 
     ESP_LOGI(TAG, "idle %ds: sleeping (BOOT or PWR wakes)", POWER_IDLE_S);
     // The wake path is esp_restart, so persist the cat before going dark;
@@ -148,6 +176,8 @@ void power_idle_check(void)
     // not routed on this board), so wake for ~1 ms every 300 ms to poll it.
     int slices = 0;
     int batt_slices = 0;
+    int moved = 0;
+    bool was_plugged = plugged;  // USB wakes on the edge, not the level
     const int64_t slept_at = esp_timer_get_time();
     for (;;) {
         // A rehearsal: wake on the clock and pretend the model asked.
@@ -178,17 +208,40 @@ void power_idle_check(void)
             ESP_LOGI(TAG, "woken by PWR");
             break;
         }
-        // Docked means awake, even when the docking happens mid-sleep:
-        // every ~6 s of sleep, peek at VBUS so plugging the board in
-        // revives it (and its USB serial port) without a button press.
+        // A finger on the glass wakes him, charging or not.
+#if WAKE_TOUCH
+        if (s_sim_secs <= 0) {
+            touch_state_t tsl;
+            if (touch_read(&tsl) && tsl.down) {
+                ESP_LOGI(TAG, "woken by touch");
+                break;
+            }
+        }
+#endif
+        // So does being picked up. Two consecutive slices of real movement,
+        // so setting something down on the same desk does not count.
+        if (s_sim_secs <= 0) {
+            if (imu_delta() > WAKE_MOTION_MSS) {
+                if (++moved >= WAKE_MOTION_SLICES) {
+                    ESP_LOGI(TAG, "woken by movement");
+                    break;
+                }
+            } else {
+                moved = 0;
+            }
+        }
+        // VBUS is an edge now, not a level: he sleeps quite happily while
+        // charging, so only the act of plugging in wakes him. Sampled on the
+        // same schedule as before.
         if ((slices % 20) == 19 && s_sim_secs <= 0) {
             int pct;
-            bool plugged;
-            if (battery_read(&pct, &plugged)) {
-                if (plugged) {
+            bool now_plugged;
+            if (battery_read(&pct, &now_plugged)) {
+                if (now_plugged && !was_plugged) {
                     ESP_LOGI(TAG, "woken by USB power");
                     break;
                 }
+                was_plugged = now_plugged;
                 // Most of a discharge happens right here, asleep. Sampling
                 // only while awake would miss the part of the curve the
                 // question is actually about. Every ~5 min of sleep.

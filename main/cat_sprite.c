@@ -2443,6 +2443,13 @@ int cat_flush_errors(void)
 
 void cat_render(void)
 {
+    // Ask for the park we mean to draw before anything can return early.
+    // cat_bg_strips() is what places the load request, and the settling hold
+    // below waits for exactly that load to land — so skipping it on the way
+    // past left the screen waiting for something nobody had asked for.
+    // Black, forever. (Host builds resolve this to a plain array lookup.)
+    (void)cat_bg_strips(s.daypart);
+
     if (s.settling) {
         // Nothing half-restored on screen: black until it is all true.
         for (int band = 0; band < BAND_COUNT; band++) {

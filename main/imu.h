@@ -18,3 +18,8 @@ float imu_tilt_x(void);
 
 // Raw low-passed gravity estimate (IMU axes), for calibration logging.
 void imu_gravity(float out[3]);
+
+// Change in the acceleration vector since the previous call, m/s^2. For the
+// sleep loop, where sampling is slow and all that matters is whether the
+// device was moved. Zero on the first call.
+float imu_delta(void);
