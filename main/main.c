@@ -240,6 +240,11 @@ static void cat_task(void *arg)
 
         const bool user_act =
             ts.down || shake > 0.8f || fabsf(tilt) > 2.0f || button_press;
+        if (user_act) {
+            // Ends a doze (screen back on) and keeps the idle timer fed.
+            power_wake_screen();
+            power_note_activity();
+        }
 
         // The buttons belong to the test bench: PWR steps, BOOT picks.
         if (button_press) {
@@ -487,7 +492,21 @@ static void cat_task(void *arg)
             settle_since_us = 0;
         }
 
-        cat_render();
+        // Nothing is drawn while dozing: the panel is asleep, and the cat
+        // carries on living regardless.
+        if (!power_dozing()) {
+            cat_render();
+        }
+
+        power_idle_check();
+
+        // A doze-time proactive fire lands here rather than through a reboot.
+        {
+            int parm, pper;
+            if (power_take_proactive(&parm, &pper)) {
+                audition_start(parm, pper, now);
+            }
+        }
 
         if (now - last_batt_us > 5000000) {
             last_batt_us = now;

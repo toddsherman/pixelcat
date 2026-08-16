@@ -51,3 +51,8 @@ void audio_mic_levels(float *rms, float *ambient);
 
 // Stop the synth and close the codec (speaker amp off), for the idle sleep.
 void audio_stop(void);
+
+// Silence the incidental effects (steps, chirps, purring) without tearing the
+// codec down — used while the screen is off. Meows and beeps raised
+// deliberately after a wake are unaffected, since that path un-mutes first.
+void audio_set_muted(bool on);

@@ -30,3 +30,6 @@ esp_err_t display_set_brightness(uint8_t level);
 
 // Display off + sleep-in, for the idle power-down.
 esp_err_t display_power_off(void);
+
+// Sleep-out + display on: undoes display_power_off() without re-running init.
+esp_err_t display_power_on(void);

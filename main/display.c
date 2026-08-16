@@ -227,6 +227,18 @@ esp_err_t display_flush_band(int band_index, const uint16_t *buffer)
     return esp_lcd_panel_draw_bitmap(s_panel, 0, y0, LCD_H_RES, y0 + BAND_ROWS, buffer);
 }
 
+// Sleep-out then display-on: the two commands from the init sequence that
+// undo display_power_off(), without touching the rest of the panel setup.
+esp_err_t display_power_on(void)
+{
+    esp_err_t ret = esp_lcd_panel_io_tx_param(s_io, 0x11, NULL, 0);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(120));  // the panel needs it after sleep-out
+    return esp_lcd_panel_io_tx_param(s_io, 0x29, NULL, 0);
+}
+
 esp_err_t display_power_off(void)
 {
     // Wait for both band buffers — i.e. all in-flight DMA — before touching

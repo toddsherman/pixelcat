@@ -26,14 +26,16 @@
 #define BOOT_BUTTON GPIO_NUM_0
 #define POLL_US 300000
 
-// He sleeps on USB power too, so the wake cycle he has learned actually runs
-// while the device sits on a desk charging — which is where it mostly lives.
+// Two different idle states, because USB power changes what is worth saving.
 //
-// The cost is real and worth knowing: light sleep suspends the USB serial
-// peripheral, so a sleeping board vanishes from /dev and cannot be flashed
-// until something wakes it. Touch the screen or pick it up first. Set this to
-// 0 to get the old docked-means-awake behaviour back during heavy debugging.
-#define SLEEP_ON_USB 1
+// On battery: light sleep. The CPU stops, and that is the whole point.
+//
+// On USB: dozing. The screen goes off and the cat stops being drawn, but the
+// CPU stays up and the USB peripheral stays enumerated — light sleep suspends
+// it, which drops the serial port and makes the board unflashable until
+// somebody touches it. Charging is the PMU's job either way and continues
+// through both. Dozing costs power that a plugged-in board is not short of,
+// and buys a device that is still there when you reach for it.
 
 // Wake on being handled, not just on buttons. Neither touch nor the IMU has
 // an interrupt line routed on this board, so both are polled in the same
@@ -45,6 +47,10 @@
 static const char *TAG = "power";
 
 static int64_t s_last_activity;
+
+// Dozing: screen off, everything else running, USB still enumerated.
+static bool s_dozing;
+static int64_t s_last_doze_check;
 
 // Survives the esp_restart that ends every sleep: the sleep loop's decision
 // to wake proactively, handed to main on the next boot.
@@ -121,27 +127,59 @@ static bool proactive_check(void)
     return true;
 }
 
+bool power_dozing(void)
+{
+    return s_dozing;
+}
+
+// Bring the panel back and count it as activity. Safe to call when not
+// dozing, so the main loop can fire it on any sign of life.
+void power_wake_screen(void)
+{
+    if (!s_dozing) {
+        return;
+    }
+    s_dozing = false;
+    audio_set_muted(false);
+    display_power_on();
+    power_note_activity();
+    ESP_LOGI(TAG, "screen back on");
+}
+
 void power_idle_check(void)
 {
     if (esp_timer_get_time() - s_last_activity < (int64_t)POWER_IDLE_S * 1000000) {
         return;
     }
 
-    // Whether USB is in decides nothing about sleeping any more — only what
-    // counts as waking, below. An unreadable fuel gauge no longer forces the
-    // board awake either; the wake sources cover it.
     int pct = -1;
     bool plugged = false;
     if (!battery_read(&pct, &plugged)) {
         pct = -1;
         plugged = false;
     }
-#if !SLEEP_ON_USB
-    if (s_sim_secs <= 0 && plugged) {
-        power_note_activity();
+
+    // Plugged in: doze instead of sleeping. Screen off, USB intact. Returns
+    // every tick so the main loop keeps running — which is what keeps the
+    // port alive and lets touch, movement or a button end it immediately.
+    if (plugged && s_sim_secs <= 0) {
+        if (!s_dozing) {
+            s_dozing = true;
+            audio_set_muted(true);
+            display_power_off();
+            ESP_LOGI(TAG, "idle %ds: screen off, staying awake on USB",
+                     POWER_IDLE_S);
+        }
+        // Still his schedule to keep. A fire here does not restart the
+        // board; main picks the audition up on the next tick.
+        if (esp_timer_get_time() - s_last_doze_check > 20000000) {
+            s_last_doze_check = esp_timer_get_time();
+            if (proactive_check()) {
+                power_wake_screen();
+            }
+        }
         return;
     }
-#endif
 
     ESP_LOGI(TAG, "idle %ds: sleeping (BOOT or PWR wakes)", POWER_IDLE_S);
     // The wake path is esp_restart, so persist the cat before going dark;

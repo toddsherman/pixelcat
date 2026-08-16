@@ -25,3 +25,10 @@ void power_sleep_now(void);
 // True once if this boot is a proactive wake the sleep loop fired; returns
 // the enticement arm and time period chosen at fire time.
 bool power_take_proactive(int *arm, int *period);
+
+// True while the screen is off but the CPU (and the USB port) are still up —
+// the idle state used on USB power, where light sleep would drop the port.
+bool power_dozing(void);
+
+// End a doze: panel back on, idle timer reset. No-op when not dozing.
+void power_wake_screen(void);

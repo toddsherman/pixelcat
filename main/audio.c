@@ -528,8 +528,24 @@ esp_err_t audio_init(i2c_master_bus_handle_t i2c_bus)
     return ESP_OK;
 }
 
+// Muted while the screen is off: a dozing cat still wanders, and footsteps
+// from a dark device are a haunting rather than a feature. The meow that
+// opens a proactive wake is unaffected — that path turns the screen on first.
+static volatile bool s_muted;
+
+void audio_set_muted(bool on)
+{
+    s_muted = on;
+    if (on) {
+        audio_stop();
+    }
+}
+
 void audio_set_purr(float intensity)
 {
+    if (s_muted) {
+        intensity = 0.0f;
+    }
     if (intensity < 0.0f) intensity = 0.0f;
     if (intensity > 1.0f) intensity = 1.0f;
     s_target = intensity;
@@ -537,6 +553,9 @@ void audio_set_purr(float intensity)
 
 void audio_chirp(void)
 {
+    if (s_muted) {
+        return;
+    }
     s_chirp_pending = true;
 }
 
@@ -547,26 +566,41 @@ void audio_hiss(void)
 
 void audio_step(void)
 {
+    if (s_muted) {
+        return;
+    }
     s_step_pending = true;
 }
 
 void audio_boing(void)
 {
+    if (s_muted) {
+        return;
+    }
     s_boing_pending = true;
 }
 
 void audio_slurp(void)
 {
+    if (s_muted) {
+        return;
+    }
     s_slurp_pending = true;
 }
 
 void audio_swipe(void)
 {
+    if (s_muted) {
+        return;
+    }
     s_swipe_pending = true;
 }
 
 void audio_dash(int dir)
 {
+    if (s_muted) {
+        return;
+    }
     s_dash_pending = (dir < 0) ? -1 : 1;
 }
 
