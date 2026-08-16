@@ -204,6 +204,19 @@ static void cat_task(void *arg)
     int plugged_before = -1;  // -1 until the first reading
     int daypart_for_log = 0;
 
+    // Start on the sky the clock says. world_init() has already loaded it,
+    // but the renderer asks for s.daypart, which is still BG_DAY here — so
+    // the first frame would request DAY, the loader would obediently swap to
+    // it, and the park would visibly flip a second later when the periodic
+    // update put it right. Setting it before the first frame closes that.
+    {
+        int yy, mm, dd;
+        if (pcf_date(&yy, &mm, &dd)) {
+            daypart_for_log = daypart_for(yy, mm, dd, pcf_minutes_of_day());
+            cat_set_daypart(daypart_for_log);
+        }
+    }
+
     if (s_pending_arm >= 0) {
         // This boot was the model's idea: he opens with meows from
         // off-screen and his learned act once he pads in.
@@ -762,8 +775,8 @@ void app_main(void)
 #endif
 
     // Load the park for whatever hour it is. The clock may still be at the
-    // epoch this early; daylight is the safe opening guess and the loader
-    // swaps in the right one within seconds of the first battery poll.
+    // epoch this early, in which case daylight is the safe opening guess;
+    // cat_task sets the engine's own daypart to match before it draws.
     {
         int yy, mm, dd, want = BG_DAY;
         if (pcf_date(&yy, &mm, &dd)) {
