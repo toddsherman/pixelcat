@@ -227,6 +227,24 @@ esp_err_t display_flush_band(int band_index, const uint16_t *buffer)
     return esp_lcd_panel_draw_bitmap(s_panel, 0, y0, LCD_H_RES, y0 + BAND_ROWS, buffer);
 }
 
+// A panel command, framed the way this panel actually expects.
+//
+// The link is QSPI, and on QSPI the CO5300 driver does not send a bare
+// command byte: it shifts the command up and puts a write opcode above it
+// (see tx_param() in esp_lcd_co5300_spi.c). Calling
+// esp_lcd_panel_io_tx_param() with a plain 0x28 therefore puts nothing the
+// panel recognises on the wire — the call succeeds, no error is reported,
+// and the panel simply carries on. That is why the screen stayed lit through
+// a doze and why display_set_brightness() has never had any effect.
+#define LCD_OPCODE_WRITE_CMD 0x02ULL
+
+static esp_err_t panel_cmd(int cmd, const void *data, size_t len)
+{
+    const int framed =
+        (int)((LCD_OPCODE_WRITE_CMD << 24) | (uint32_t)((cmd & 0xFF) << 8));
+    return esp_lcd_panel_io_tx_param(s_io, framed, data, len);
+}
+
 // Undo display_power_off() by replaying the whole init list, not just the
 // sleep-out and display-on at the end of it.
 //
@@ -242,8 +260,7 @@ esp_err_t display_power_on(void)
 {
     for (size_t i = 0; i < sizeof(s_init_cmds) / sizeof(s_init_cmds[0]); i++) {
         const co5300_lcd_init_cmd_t *c = &s_init_cmds[i];
-        const esp_err_t ret = esp_lcd_panel_io_tx_param(
-            s_io, c->cmd, c->data, c->data_bytes);
+        const esp_err_t ret = panel_cmd(c->cmd, c->data, c->data_bytes);
         if (ret != ESP_OK) {
             return ret;
         }
@@ -264,9 +281,9 @@ esp_err_t display_power_off(void)
     xSemaphoreGive(s_buffers_free);
 
     // Display off, then sleep-in: the panel drops to microamps.
-    esp_err_t ret = esp_lcd_panel_io_tx_param(s_io, 0x28, NULL, 0);
+    esp_err_t ret = panel_cmd(0x28, NULL, 0);  // display off
     if (ret == ESP_OK) {
-        ret = esp_lcd_panel_io_tx_param(s_io, 0x10, NULL, 0);
+        ret = panel_cmd(0x10, NULL, 0);  // sleep in
     }
     vTaskDelay(pdMS_TO_TICKS(120));
     return ret;
@@ -274,5 +291,5 @@ esp_err_t display_power_off(void)
 
 esp_err_t display_set_brightness(uint8_t level)
 {
-    return esp_lcd_panel_io_tx_param(s_io, LCD_CMD_BRIGHTNESS, &level, 1);
+    return panel_cmd(LCD_CMD_BRIGHTNESS, &level, 1);
 }
