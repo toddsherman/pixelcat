@@ -50,7 +50,15 @@ int main(int argc, char **argv)
     cat_touch_t t = {0};
     const float dt = 1.0f / CAT_FPS;
 
-    if (want >= 50) {
+    if (want >= 70) {
+        // 70 + daypart: the park and HUD in that scene, with no cat in it —
+        // the plate the website animation draws its own cat onto.
+        cat_set_daypart(want - 70);
+        cat_debug_force(60);  // absent
+        for (float el = 0; el < seconds; el += dt) {
+            cat_update(dt, &t, 0.0f, 0.0f);
+        }
+    } else if (want >= 50) {
         cat_debug_force(want);
         for (float el = 0; el < seconds; el += dt) {
             cat_update(dt, &t, 0.0f, 0.0f);

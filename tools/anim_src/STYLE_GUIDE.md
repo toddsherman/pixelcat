@@ -1,7 +1,12 @@
 # PixelCat animation frame style guide
 
 You are drawing ONE animation cycle for a minimal pixel-art white cat,
-16 px wide, side-view **facing LEFT** (the engine mirrors for right).
+18 px wide, side-view **facing RIGHT** (the engine mirrors for left:
+stampf(..., s.facing_left), and s.facing_left is set when move_dir < 0).
+
+This said LEFT for a long time and the sprites never did — in every frame
+the eye sits in the right half. Anything that trusts the text instead of
+the pixels ends up drawing a cat that walks backwards.
 
 The cat is derived from Elthen's 2D Pixel Art Cat Sprites, modified — see
 CREDITS.md. Match his proportions and silhouette; new cycles are extensions
